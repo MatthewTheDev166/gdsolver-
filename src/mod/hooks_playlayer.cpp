@@ -172,10 +172,10 @@ class $modify(PlayLayer) {
         const bool armed = level && g_uiArmedLevel == level;
         if (g_uiArmedLevel && !armed)
             log::info("play menu: armed for another level, entering {} unarmed",
-                      level ? level->m_levelID.value() : -1);
+                      level ? levelKeyId(level) : -1);
         g_uiArmedLevel = nullptr;   // one entry per Start, whatever is decided below
         bool want = (!g_started || g_sessionOver) && g_uiMode > 0 && armed;
-        if (want && uiConfigureSession(level->m_levelID.value())) attemptAutoForLevel(level);
+        if (want && uiConfigureSession(levelKeyId(level))) attemptAutoForLevel(level);
         // Sample the level's own record before it has run a tick, so the session-end line can
         // state whether anything was written into it (see progressDiff). A level a slice swap
         // brings in (level_slice.hpp) is not sampled: the record the line speaks for stays the

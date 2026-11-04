@@ -5,6 +5,8 @@
 #include "mod/plan_io.hpp"
 #include "mod/profsample.hpp"
 #include "mod/record_gate.hpp"
+#include <Geode/binding/GJGameLevel.hpp>
+#include <Geode/binding/LocalLevelManager.hpp>
 
 namespace p1 {
 
@@ -24,11 +26,46 @@ inline void uiSessionBase(int levelId) {
     g_cfg.delaySec = 0.f;
 }
 
+// Returns a unique integer ID for any level. For online and main levels, this is m_levelID (> 0).
+// For local/editor levels created in the Create tab (m_levelID == 0), a unique ID is derived from
+// the level name and occurrence index so each local level has its own independent solution file.
+inline int levelKeyId(GJGameLevel* level) {
+    if (!level) return 0;
+    const int onlineId = level->m_levelID.value();
+    if (onlineId > 0) return onlineId;
+
+    std::string key = level->m_levelName;
+    if (auto* llm = LocalLevelManager::sharedState()) {
+        if (auto* arr = llm->m_localLevels) {
+            int countBefore = 0;
+            for (auto* obj : geode::cocos::CCArrayExt<GJGameLevel*>(arr)) {
+                if (obj == level) break;
+                if (obj && obj->m_levelName == level->m_levelName) {
+                    ++countBefore;
+                }
+            }
+            if (countBefore > 0) {
+                key += "#" + std::to_string(countBefore);
+            }
+        }
+    }
+    uint32_t h = 2166136261u;
+    for (char c : key) {
+        h ^= static_cast<uint8_t>(c);
+        h *= 16777619u;
+    }
+    return 1900000000 + static_cast<int>(h % 99999999u);
+}
+
 // The stored solution Replay plays for a level: the plain one, or with Coins on the coin one.
 // The play menu asks the same question before offering Replay, so both read it from here.
 inline std::string uiSolutionPath(int levelId, bool coins) {
     return std::string(DATA_DIR) + "/solution_lv" + std::to_string(levelId)
            + (coins ? "_coins.txt" : "_dp.txt");
+}
+
+inline std::string uiSolutionPath(GJGameLevel* level, bool coins) {
+    return uiSolutionPath(levelKeyId(level), coins);
 }
 
 inline bool uiConfigureSession(int levelId) {

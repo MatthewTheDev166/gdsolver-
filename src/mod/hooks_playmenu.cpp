@@ -802,7 +802,7 @@ protected:
     bool init(GJGameLevel* level, LevelFacts facts, std::function<void()> play) {
         using namespace cocos2d;
         m_facts = facts;
-        m_levelId = level->m_levelID.value();
+        m_levelId = levelKeyId(level);
         if (!PopupBase::init(kW, kH + kNoteRow * (float)std::max(0, noteCount() - 1)))
             return false;
         // ...and the stored solutions the version line is decided from.
@@ -824,7 +824,7 @@ protected:
         // and Solve only where none is. On Solve, Coins keeps the last Start's choice. A level
         // without coins has nothing for the switch to route for: it stays off there, and the
         // choice made on a level that has them is not overwritten by this one (onStart).
-        const int id = level->m_levelID.value();
+        const int id = m_levelId;
         auto stored = [id](bool coins) {
             std::vector<InputCmd> plan;
             return loadInputsFile(uiSolutionPath(id, coins), plan, true);
@@ -1011,7 +1011,7 @@ protected:
     // the test the session itself applies (loadInputsFile).
     bool hasSolution() const {
         std::vector<InputCmd> plan;
-        return loadInputsFile(uiSolutionPath(m_level->m_levelID.value(), m_coins), plan, true);
+        return loadInputsFile(uiSolutionPath(m_levelId, m_coins), plan, true);
     }
 
     void refresh() {
@@ -1107,7 +1107,7 @@ protected:
     void onExportMacro(CCObject*) {
         if (!hasSolution()) return;
         std::vector<InputCmd> plan;
-        const std::string path = uiSolutionPath(m_level->m_levelID.value(), m_coins);
+        const std::string path = uiSolutionPath(m_levelId, m_coins);
         if (!loadInputsFile(path, plan, true) || plan.empty()) {
             notify::show("No inputs in solution", geode::NotificationIcon::Error, 3.f);
             return;
