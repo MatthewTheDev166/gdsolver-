@@ -105,7 +105,21 @@
 			"type": "keybind",
 			"name": "The replay panel",
 			"description": "Shows GD's own record of the deepest verified attempt in the free corner of the screen, on and off.",
-			"default": "Tab"
+			"default": "RightShift"
+		},
+		"export-frame-offset": {
+			"type": "int",
+			"name": "Macro Export Frame Offset",
+			"description": "Shifts every input of an exported .gdr2 by this many frames (0 = exactly the mod's ticks). For trying -1 / +1 if a macro player lands inputs a frame off.",
+			"default": 1,
+			"min": -10,
+			"max": 10
+		},
+		"export-path": {
+			"type": "string",
+			"name": "Macro Export Folder",
+			"description": "Folder where exported .gdr2 macros are saved.",
+			"default": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Geometry Dash\\replays"
 		}
 	}
 }

@@ -40,7 +40,7 @@ constexpr int LABEL_TAG = 0x51D81;
 constexpr int TOUCH_TAG = 0x51D82;
 
 // What the panel plays, and whether: cfg `replaypanel` is the start (0 off, 1 the whole verified path -- the default --, 2 its last
-// stretch; 3 was the model's plan as a mode of its own and now means 1) and the key (Tab) goes round full -> recent -> off -> full.
+// stretch; 3 was the model's plan as a mode of its own and now means 1) and the key (Right Shift) goes round full -> recent -> off -> full.
 // -1 = follow cfg. The model's plan is not a mode: whenever the solver has found one, the path played is GD's own up to the anchor of
 // the solver's latest search and, from there, the walk the model made of the plan (`dp_tail.txt.trace.csv`) -- what the model believes
 // the plan does, drawn in its own colour -- joined to the verified path as its last part. It may differ from what GD will do; it is a
@@ -1012,7 +1012,7 @@ inline void update(cocos2d::CCNode* parent, bool show, std::initializer_list<int
     }
 }
 
-// Tab: the whole path -> its last stretch -> off -> the whole path.
+// Right Shift: the whole path -> its last stretch -> off -> the whole path.
 inline void toggle() {
     static const int order[] = {Full, Recent, Off};
     int i = 0;

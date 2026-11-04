@@ -12,7 +12,7 @@ The showing of the solution at the end is a replay and the panel is not drawn th
 it is hidden -- not emptied: its mode, place, stop and pace are kept, and it comes back as it was when the screen
 goes off again. Both ends of a solve empty it, so the next level never starts with the last one's picture.
 
-`Tab` (Geode setting `key-replaypanel`) goes round **the whole path** (every stretch the run has got through, end to end;
+`Right Shift` (Geode setting `key-replaypanel`) goes round **the whole path** (every stretch the run has got through, end to end;
 the default) -> **its last stretch** (`replaypanelspan` ticks, 20 s) -> **off** -> the whole path. `replaypanel` in
 `autorun.cfg` picks where it starts: 0 off, 1 the whole path, 2 the last stretch (3, which used to be a mode of the model's
 plan, is read as 1). `F1` does not hide it: the panel only shows during a solve, and `F1` does not hide the overlay then either.

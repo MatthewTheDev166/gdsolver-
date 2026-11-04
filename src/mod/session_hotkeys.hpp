@@ -79,7 +79,20 @@ inline const char* const kKeySettings[(size_t)Key::Count] = {
     "key-seek-back", "key-seek-forward", "key-takeover-end", "key-replaypanel"
 };
 
-inline bool keyHeld(Key k) { return g_keyDown[(size_t)k]; }
+inline bool hotkeysFocused();
+
+inline bool keyHeld(Key k) {
+    if (g_keyDown[(size_t)k]) return true;
+#ifdef GEODE_IS_WINDOWS
+    if (k == Key::ReplayPanel && hotkeysFocused()) {
+        auto binds = Mod::get()->getSettingValue<std::vector<Keybind>>(kKeySettings[(size_t)k]);
+        if (!binds.empty() && binds.front().key == cocos2d::enumKeyCodes::KEY_RightShift) {
+            return (GetAsyncKeyState(VK_RSHIFT) & 0x8000) != 0;
+        }
+    }
+#endif
+    return false;
+}
 
 // Whether the keyboard belongs to this game right now: the foreground window is one of our process's.
 //

@@ -315,7 +315,7 @@ A solve runs
 fast, dark and silent until a candidate clears, and then plays that one through at 1x with the
 artwork and the music. While a level is on screen an overlay reports what the loop is doing, and
 F10 draws the iteration map: where the repair rounds went, and where the model — rather than
-the plan — was wrong. While a solve runs with the screen dark, the replay panel (`Tab`) plays
+the plan — was wrong. While a solve runs with the screen dark, the replay panel (`Right Shift`) plays
 GD's own record of the deepest attempt the game has verified, in the free area to the right.
 Under Solve, Options holds Section search, Avoid glitches (Off, Glitches only, or Glitches + wave)
 and the search itself, each with an (i) button saying what its values mean. Leaving a level ends

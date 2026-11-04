@@ -3,11 +3,23 @@
 #include "mod/level_warnings.hpp"
 #include "mod/window_guard.hpp"
 #include "mod/gd_compat.hpp"
+#include "mod/notify.hpp"
+#include "mod/gdr2_export.hpp"
 #include <Geode/modify/LevelInfoLayer.hpp>
 #include <Geode/modify/LevelPage.hpp>
 #include <Geode/modify/EditLevelLayer.hpp>
 #include <Geode/modify/CCMenuItemSpriteExtra.hpp>
 #include <Geode/ui/Popup.hpp>
+#include <Geode/ui/TextInput.hpp>
+#ifdef GEODE_IS_WINDOWS
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#include <shobjidl.h>
+#pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "ole32.lib")
+#endif
 #include "mod/ui_popup.hpp"   // the layout helpers, and on 2.209 the popup base and the scroll window: see that file
 #include <algorithm>
 #include <cmath>
@@ -410,6 +422,7 @@ protected:
     cocos2d::CCLabelBMFont* m_menuNote = nullptr;
     cocos2d::CCLabelBMFont* m_glitchValue = nullptr;
     cocos2d::CCLabelBMFont* m_searchValue = nullptr;
+    geode::TextInput* m_exportInput = nullptr;
 
     // Top to bottom: the title; the Section search row; Avoid glitches (title, value between arrows); Search (the same); the Hold Play row and,
     // when it is checked, its note; OK. 284 high, inside GD's design height (320; the popup's close button rises above its frame).
@@ -473,28 +486,92 @@ protected:
         return t;
     }
 
-    // The Replay form: 190 high; the fixed replay step row (with its (i)), the Hold Play row and its note, OK.
+    // The Replay form: 240 high; the fixed replay step row (with its (i)), the Hold Play row and its note,
+    // the Macro Export Folder row, and OK.
     bool initReplay(bool replayStep, ReplayChange onChange) {
         using namespace cocos2d;
-        if (!PopupBase::init(kW, 190.f)) return false;
+        if (!PopupBase::init(kW, 240.f)) return false;
         this->setID("play-menu-options"_spr);
         m_replayStep = replayStep;
         m_onReplay = std::move(onChange);
         this->setTitle("Options");
-        m_stepToggle = addToggleRow("replay-step", "Fixed replay step", -50.f, m_replayStep, menu_selector(Options::onReplayStep), 4);
-        m_menuToggle = addToggleRow("menu", "Hold Play to open this menu", -86.f, !Mod::get()->getSettingValue<bool>("play-menu"),
+        m_stepToggle = addToggleRow("replay-step", "Fixed replay step", -48.f, m_replayStep, menu_selector(Options::onReplayStep), 4);
+        m_menuToggle = addToggleRow("menu", "Hold Play to open this menu", -82.f, !Mod::get()->getSettingValue<bool>("play-menu"),
                                     menu_selector(Options::onMenuSetting), 3);
         m_menuNote = CCLabelBMFont::create("", "chatFont.fnt");
         m_menuNote->setScale(.55f);
         m_menuNote->setColor(kWarnYellow);
         m_menuNote->setID("menu-note"_spr);
-        ui::addChildAtPosition(m_mainLayer, m_menuNote, Anchor::Top, ccp(0, -104.f));
+        ui::addChildAtPosition(m_mainLayer, m_menuNote, Anchor::Top, ccp(0, -98.f));
+
+        auto* exportLabel = CCLabelBMFont::create("Macro Export Folder", "goldFont.fnt");
+        exportLabel->setScale(.55f);
+        exportLabel->setID("export-folder-label"_spr);
+        ui::addChildAtPosition(m_mainLayer, exportLabel, Anchor::Top, ccp(0, -122.f));
+
+        m_exportInput = geode::TextInput::create(190.f, "Path", "chatFont.fnt");
+        m_exportInput->setID("export-path-input"_spr);
+        m_exportInput->setCommonFilter(geode::CommonFilter::Any);
+        const std::string curPath = Mod::get()->getSettingValue<std::string>("export-path");
+        m_exportInput->setString(curPath, false);
+        m_exportInput->setCallback([](std::string const& str) {
+            Mod::get()->setSettingValue<std::string>("export-path", str);
+        });
+        ui::addChildAtPosition(m_mainLayer, m_exportInput, Anchor::Top, ccp(-32.f, -154.f));
+
+        auto* browseSpr = ButtonSprite::create("Browse", 52, true, "goldFont.fnt", "GJ_button_04.png", 26.f, .55f);
+        auto* browseBtn = CCMenuItemSpriteExtra::create(browseSpr, this, menu_selector(Options::onBrowse));
+        browseBtn->setID("export-browse-button"_spr);
+        ui::addChildAtPosition(m_buttonMenu, browseBtn, Anchor::Top, ccp(98.f, -154.f));
+
         auto* okSpr = ButtonSprite::create("OK", "goldFont.fnt", "GJ_button_01.png", .8f);
         auto* ok = CCMenuItemSpriteExtra::create(okSpr, this, menu_selector(Options::onOk));
         ok->setID("ok-button"_spr);
-        ui::addChildAtPosition(m_buttonMenu, ok, Anchor::Bottom, ccp(0.f, 26.f));
+        ui::addChildAtPosition(m_buttonMenu, ok, Anchor::Bottom, ccp(0.f, 22.f));
         showMenuNote(!Mod::get()->getSettingValue<bool>("play-menu"));
         return true;
+    }
+
+    void onBrowse(CCObject*) {
+#ifdef GEODE_IS_WINDOWS
+        const HRESULT hrCo = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+        IFileOpenDialog* pFileOpen = nullptr;
+        if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_ALL, IID_IFileOpenDialog, reinterpret_cast<void**>(&pFileOpen)))) {
+            DWORD dwOptions = 0;
+            if (SUCCEEDED(pFileOpen->GetOptions(&dwOptions))) {
+                pFileOpen->SetOptions(dwOptions | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
+            }
+            std::string current = Mod::get()->getSettingValue<std::string>("export-path");
+            if (!current.empty()) {
+                IShellItem* pDefaultFolder = nullptr;
+                std::wstring wCurrent(current.begin(), current.end());
+                if (SUCCEEDED(SHCreateItemFromParsingName(wCurrent.c_str(), nullptr, IID_PPV_ARGS(&pDefaultFolder)))) {
+                    pFileOpen->SetFolder(pDefaultFolder);
+                    pDefaultFolder->Release();
+                }
+            }
+            if (SUCCEEDED(pFileOpen->Show(nullptr))) {
+                IShellItem* pItem = nullptr;
+                if (SUCCEEDED(pFileOpen->GetResult(&pItem))) {
+                    PWSTR pszFilePath = nullptr;
+                    if (SUCCEEDED(pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath))) {
+                        std::filesystem::path picked(pszFilePath);
+                        std::string pickedStr = picked.string();
+                        Mod::get()->setSettingValue<std::string>("export-path", pickedStr);
+                        if (m_exportInput) {
+                            m_exportInput->setString(pickedStr, false);
+                        }
+                        CoTaskMemFree(pszFilePath);
+                    }
+                    pItem->Release();
+                }
+            }
+            pFileOpen->Release();
+        }
+        if (SUCCEEDED(hrCo)) {
+            CoUninitialize();
+        }
+#endif
     }
 
     // CCMenuItemToggler calls its target before it flips its own state (see the menu's onCoins).
@@ -576,7 +653,12 @@ protected:
         refresh();
     }
 
-    void onOk(CCObject*) { this->onClose(nullptr); }
+    void onOk(CCObject*) {
+        if (m_exportInput) {
+            Mod::get()->setSettingValue<std::string>("export-path", m_exportInput->getString());
+        }
+        this->onClose(nullptr);
+    }
 
     // The (i) buttons: 0 Section search, 1 Avoid glitches, 2 Search -- every value of the choice, named -- and 3 Hold Play.
     void onInfo(CCObject* sender) {
@@ -654,6 +736,8 @@ protected:
     int m_levelId = 0;
     ButtonSprite* m_startSpr = nullptr;
     CCMenuItemSpriteExtra* m_startBtn = nullptr;
+    ButtonSprite* m_exportSpr = nullptr;
+    CCMenuItemSpriteExtra* m_exportBtn = nullptr;
 
     // The layout, top to bottom: the title and the level's name, the mode row, the description,
     // the Coins row (offsets from the top edge), then from the bottom edge up Start, the bot note
@@ -669,8 +753,8 @@ protected:
     // 2026-10-01), and the setting itself from mod.json (2026-10-16): cfg dpplainbeside=3 is its only way in.
     // Even so the popup can be taller than the screen -- GD's design height is 320 -- so
     // shrinkToFit scales it down to fit.
-    static constexpr float kW = 340.f, kH = 260.f;
-    static constexpr float kModeY = -88.f, kDescY = -128.f, kCoinY = -164.f;   // from the top edge
+    static constexpr float kW = 340.f, kH = 280.f;
+    static constexpr float kModeY = -88.f, kDescY = -128.f, kCoinY = -162.f, kExportY = -194.f;   // from the top edge
     static constexpr float kNoteY = 64.f, kStartY = 32.f;   // from the bottom edge
     static constexpr float kNoteRow = 14.f;   // the level's notes stack up from the bot note
 
@@ -869,6 +953,11 @@ protected:
         m_startBtn->setID("start-button"_spr);
         ui::addChildAtPosition(m_buttonMenu, m_startBtn, Anchor::Bottom, ccp(0, kStartY));
 
+        m_exportSpr = ButtonSprite::create("Export Macro", 110, true, "goldFont.fnt", "GJ_button_04.png", 26.f, .6f);
+        m_exportBtn = CCMenuItemSpriteExtra::create(m_exportSpr, this, menu_selector(Popup::onExportMacro));
+        m_exportBtn->setID("export-macro-button"_spr);
+        ui::addChildAtPosition(m_buttonMenu, m_exportBtn, Anchor::Top, ccp(0.f, kExportY));
+
         refresh();
         return true;
     }
@@ -992,6 +1081,15 @@ protected:
         m_desc->setColor(ok ? kWhite : kRefused);
         m_startBtn->setEnabled(ok);
         m_startSpr->setColor(ok ? kWhite : kDim);
+        const bool isReplay = (m_mode == UI_MODE_REPLAY);
+        m_exportBtn->setVisible(isReplay);
+        if (isReplay) {
+            const bool canExport = hasSolution();
+            m_exportBtn->setEnabled(canExport);
+            m_exportSpr->setColor(canExport ? kWhite : kDim);
+        } else {
+            m_exportBtn->setEnabled(false);
+        }
     }
 
     void onMode(CCObject* sender) {
@@ -1004,6 +1102,41 @@ protected:
     void onCoins(CCObject*) {
         m_coins = !m_coinToggle->isToggled();
         refresh();
+    }
+
+    void onExportMacro(CCObject*) {
+        if (!hasSolution()) return;
+        std::vector<InputCmd> plan;
+        const std::string path = uiSolutionPath(m_level->m_levelID.value(), m_coins);
+        if (!loadInputsFile(path, plan, true) || plan.empty()) {
+            notify::show("No inputs in solution", geode::NotificationIcon::Error, 3.f);
+            return;
+        }
+
+        std::string exportFolder = Mod::get()->getSettingValue<std::string>("export-path");
+        if (exportFolder.empty()) {
+            exportFolder = "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Geometry Dash\\replays";
+        }
+
+        std::string outFilename;
+        std::string outError;
+        const int coinsCount = m_coins ? m_facts.coins : 0;
+        const bool exported = gdsolver::macro::exportGdr2(
+            std::filesystem::path(exportFolder),
+            m_level->m_levelID.value(),
+            m_level->m_levelName,
+            coinsCount,
+            plan,
+            outFilename,
+            outError,
+            static_cast<int>(Mod::get()->getSettingValue<int64_t>("export-frame-offset"))
+        );
+
+        if (exported) {
+            notify::show("Exported " + outFilename, geode::NotificationIcon::Success, 3.f);
+        } else {
+            notify::show("Export failed: " + outError, geode::NotificationIcon::Error, 4.f);
+        }
     }
 
     // The (i) beside the Options line: what each choice that is not the default costs.
