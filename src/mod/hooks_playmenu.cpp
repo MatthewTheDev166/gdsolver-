@@ -738,6 +738,9 @@ protected:
     CCMenuItemSpriteExtra* m_startBtn = nullptr;
     ButtonSprite* m_exportSpr = nullptr;
     CCMenuItemSpriteExtra* m_exportBtn = nullptr;
+    int m_profile = PROFILE_NORMAL;
+    ButtonSprite* m_profileSpr[PROFILE_COUNT] = {};
+    CCMenuItemSpriteExtra* m_profileBtn[PROFILE_COUNT] = {};
 
     // The layout, top to bottom: the title and the level's name, the mode row, the description,
     // the Coins row (offsets from the top edge), then from the bottom edge up Start, the bot note
@@ -753,9 +756,10 @@ protected:
     // 2026-10-01), and the setting itself from mod.json (2026-10-16): cfg dpplainbeside=3 is its only way in.
     // Even so the popup can be taller than the screen -- GD's design height is 320 -- so
     // shrinkToFit scales it down to fit.
-    static constexpr float kW = 340.f, kH = 280.f;
-    static constexpr float kModeY = -88.f, kDescY = -128.f, kCoinY = -162.f, kExportY = -194.f;   // from the top edge
-    static constexpr float kNoteY = 64.f, kStartY = 32.f;   // from the bottom edge
+    static constexpr float kW = 340.f, kH = 296.f;
+    static constexpr float kModeY = -88.f, kDescY = -128.f, kCoinY = -160.f, kExportY = -197.f;   // from the top edge
+    static constexpr float kProfileRow1Y = -185.f, kProfileRow2Y = -210.f;
+    static constexpr float kNoteY = 62.f, kStartY = 30.f;   // from the bottom edge
     static constexpr float kNoteRow = 14.f;   // the level's notes stack up from the bot note
 
     static std::string modVersion() { return Mod::get()->getVersion().toVString(); }
@@ -958,6 +962,22 @@ protected:
         m_exportBtn->setID("export-macro-button"_spr);
         ui::addChildAtPosition(m_buttonMenu, m_exportBtn, Anchor::Top, ccp(0.f, kExportY));
 
+        m_profile = std::clamp(Mod::get()->getSavedValue<int>("play-profile", PROFILE_NORMAL),
+                               0, PROFILE_COUNT - 1);
+        const float colX[3] = {-98.f, 0.f, 98.f};
+        for (int p = 0; p < PROFILE_COUNT; ++p) {
+            const float y = (p < 3) ? kProfileRow1Y : kProfileRow2Y;
+            const float x = colX[p % 3];
+            m_profileSpr[p] = ButtonSprite::create(uiProfileName(p), 86, true, "goldFont.fnt",
+                                                  "GJ_button_04.png", 22.f, .45f);
+            m_profileBtn[p] = CCMenuItemSpriteExtra::create(m_profileSpr[p], this,
+                                                           menu_selector(Popup::onProfile));
+            m_profileBtn[p]->setTag(p);
+            std::string btnId = "profile-btn-" + std::to_string(p);
+            m_profileBtn[p]->setID(btnId.c_str());
+            ui::addChildAtPosition(m_buttonMenu, m_profileBtn[p], Anchor::Top, ccp(x, y));
+        }
+
         refresh();
         return true;
     }
@@ -1073,11 +1093,18 @@ protected:
                                                cocos2d::CCPoint(ui::scaledContentWidth(label) / 2.f + 12.f, y));
             }
         }
-        m_desc->setString(ok ? describe(m_mode, m_coins)
-                             : (m_coins ? "No stored coin solution for this level yet.\n"
-                                          "Solve it with Coins on first."
-                                        : "No stored solution for this level yet.\n"
-                                          "Solve it first."));
+        if (m_mode == UI_MODE_SOLVE) {
+            std::string descText = ok ? describe(m_mode, m_coins) : "";
+            descText += "\n";
+            descText += describeProfile(m_profile);
+            m_desc->setString(descText.c_str());
+        } else {
+            m_desc->setString(ok ? describe(m_mode, m_coins)
+                                 : (m_coins ? "No stored coin solution for this level yet.\n"
+                                              "Solve it with Coins on first."
+                                            : "No stored solution for this level yet.\n"
+                                              "Solve it first."));
+        }
         m_desc->setColor(ok ? kWhite : kRefused);
         m_startBtn->setEnabled(ok);
         m_startSpr->setColor(ok ? kWhite : kDim);
@@ -1090,6 +1117,21 @@ protected:
         } else {
             m_exportBtn->setEnabled(false);
         }
+        const bool isSolve = (m_mode == UI_MODE_SOLVE);
+        for (int p = 0; p < PROFILE_COUNT; ++p) {
+            if (m_profileBtn[p]) {
+                m_profileBtn[p]->setVisible(isSolve);
+                m_profileBtn[p]->setEnabled(isSolve);
+                if (m_profileSpr[p]) {
+                    m_profileSpr[p]->updateBGImage(p == m_profile ? "GJ_button_01.png" : "GJ_button_04.png");
+                }
+            }
+        }
+    }
+
+    void onProfile(CCObject* sender) {
+        m_profile = static_cast<cocos2d::CCNode*>(sender)->getTag();
+        refresh();
     }
 
     void onMode(CCObject* sender) {
@@ -1178,6 +1220,7 @@ protected:
         g_uiSecSolve = m_mode != UI_MODE_SOLVE || m_secSolve;
         g_uiReplayStep = m_mode == UI_MODE_REPLAY && m_replayStep;
         g_uiSearch = m_mode == UI_MODE_SOLVE ? m_search : UI_SEARCH_DP;
+        g_uiProfile = (m_mode == UI_MODE_SOLVE) ? m_profile : PROFILE_NORMAL;
         g_uiArmedLevel = m_level.data();
         Mod::get()->setSavedValue<int>("play-mode", m_mode);
         if (m_facts.coins > 0) Mod::get()->setSavedValue<bool>("play-coins", m_coins);
@@ -1188,8 +1231,9 @@ protected:
             Mod::get()->setSavedValue<bool>("play-glitch", m_glitch != UI_GLITCH_OFF);
             Mod::get()->setSavedValue<bool>("play-secsolve", m_secSolve);
             Mod::get()->setSavedValue<int>("play-search", m_search);
+            Mod::get()->setSavedValue<int>("play-profile", m_profile);
         }
-        log::info("play menu: {} lv{}{}{}{}{} ({} coins in the level)", uiModeName(m_mode),
+        log::info("play menu: {} lv{}{}{}{}{}, profile {} ({} coins in the level)", uiModeName(m_mode),
                   m_level->m_levelID.value(),
                   (m_mode != UI_MODE_NORMAL && m_coins) ? " with coins" : "",
                   g_uiGlitch ? (std::string(" avoiding glitches (") + uiGlitchName(g_uiGlitchMode) + ")")
@@ -1197,6 +1241,7 @@ protected:
                   g_uiSecSolve ? "" : ", no section search",
                   g_uiSearch != UI_SEARCH_DP ? std::string(", search ") + uiSearchName(g_uiSearch)
                                              : std::string(),
+                  uiProfileName(m_profile),
                   m_facts.coins);
         // Close first: the game's onPlay may open an alert of its own (no song, high object
         // count), and that alert must not end up underneath this popup.

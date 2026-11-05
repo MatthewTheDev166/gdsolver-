@@ -1468,10 +1468,29 @@ inline int searchLayers(E& e, const Rules& rules, SearchResult& out) {
             // Route tightness rides along with the child (State c = s copies it
             // already, so this only adds this tick's own contribution). Read by
             // the goal pick below; nothing else looks at it.
-            if (!dead && kid.s.tight < 0xffff
-                && tightHere(near, (double)kid.s.xAbs, (double)kid.s.y,
-                             playerHalf(kid.s.mode, kid.s.mini != 0), kTightPx))
-                ++kid.s.tight;
+            if (!dead && kid.s.tight < 0xffff) {
+                if (g_solveProfile == 1) { // Min Clicks: penalize any input toggle/press
+                    if ((int)s.action != input) {
+                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 20);
+                    }
+                } else if (g_solveProfile == 2) { // Max Clicks: penalize staying in the same input
+                    if ((int)s.action == input) {
+                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 2);
+                    }
+                } else if (g_solveProfile == 4) { // Centerline: heavy penalty for being near obstacles
+                    if (tightHere(near, (double)kid.s.xAbs, (double)kid.s.y,
+                                  playerHalf(kid.s.mode, kid.s.mini != 0), kTightPx * 2.5))
+                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 6);
+                } else if (g_solveProfile == 5) { // Close-Call: reward being near obstacles (penalize open air)
+                    if (!tightHere(near, (double)kid.s.xAbs, (double)kid.s.y,
+                                   playerHalf(kid.s.mode, kid.s.mini != 0), kTightPx))
+                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 2);
+                } else {
+                    if (tightHere(near, (double)kid.s.xAbs, (double)kid.s.y,
+                                  playerHalf(kid.s.mode, kid.s.mini != 0), kTightPx))
+                        ++kid.s.tight;
+                }
+            }
             // --wavetidy / --wavetoggle: a wave's tick is charged for how far it sits from the middle of its corridor,
             // and a change of the button for itself (thread_pool.hpp); saturating, never wrapping.
             if (!dead && (g_waveTidy > 0.0 || g_waveToggle > 0) && kid.s.mode == 4 && kid.s.frame == 0) {
@@ -2457,11 +2476,12 @@ inline int searchLayers(E& e, const Rules& rules, SearchResult& out) {
         if (qfHere)
             std::printf("qfold: t=%lld frontier=%zu kept=%zu lostq=%lld keys=%lld\n",
                         (long long)t, qfPre, nxt.size(), qfLost, qfKeys);
-        // --wavetidy / --wavetoggle: the next layer is stepped tidiest route first, so the first-accepted-wins dedupe
+        // --wavetidy / --wavetoggle / --profile: the next layer is stepped tidiest route first, so the first-accepted-wins dedupe
         // of its children keeps the tidier route into a cell. Stable: equal scores keep the order they had.
-        // Only in a layer that has a wave in it: elsewhere the order is the one it was, and so is the cap's stride.
-        if ((g_waveTidy > 0.0 || g_waveToggle > 0)
-            && std::any_of(nxt.begin(), nxt.end(), [](const State& s) { return s.mode == 4; }))
+        // Only in a layer that has a wave in it, or when a profile is active: elsewhere the order is the one it was, and so is the cap's stride.
+        if (((g_waveTidy > 0.0 || g_waveToggle > 0)
+             && std::any_of(nxt.begin(), nxt.end(), [](const State& s) { return s.mode == 4; }))
+            || (g_solveProfile != 0 && !nxt.empty()))
             std::stable_sort(nxt.begin(), nxt.end(),
                              [](const State& a, const State& b) { return a.tight < b.tight; });
         prevAlive = cur.size();

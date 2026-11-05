@@ -711,6 +711,7 @@ inline void resetInvocationState() {
     g_waveCentre = 0.0;
     g_waveTidy = 0.0;
     g_waveToggle = 0;
+    g_solveProfile = 0;
     g_startEdge = -1;
     g_glitchEmbed = 0.0;
     g_glitchDeco = false;

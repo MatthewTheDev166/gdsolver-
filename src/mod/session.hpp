@@ -137,11 +137,24 @@ inline bool uiConfigureSession(int levelId) {
             g_cfg.waveTidy = kWaveTidyDefault;
             g_cfg.waveToggle = kWaveToggleDefault;
         }
+        // Training profile configuration:
+        g_cfg.solveProfile = g_uiProfile;
+        if (g_cfg.solveProfile == PROFILE_HUMAN) {
+            g_cfg.wavePulse = std::max(g_cfg.wavePulse, 12);
+            g_cfg.waveTidy = (g_cfg.waveTidy > 0.0) ? g_cfg.waveTidy : 1.0;
+            g_cfg.waveCentre = (g_cfg.waveCentre > 0.0) ? g_cfg.waveCentre : 1.0;
+        } else if (g_cfg.solveProfile == PROFILE_CENTERLINE) {
+            g_cfg.waveCentre = 2.0;
+            g_cfg.waveTidy = 2.0;
+        } else if (g_cfg.solveProfile == PROFILE_MIN_CLICKS) {
+            g_cfg.waveToggle = std::max(g_cfg.waveToggle, 20);
+        }
         // Section search: on unless Options turned it off (cfg dpsecauto=0, the same switch).
         if (!g_uiSecSolve) g_cfg.dpSecAuto = false;
         // The search (Config::dpSearch): the layer DP unless Options chose an experimental one.
         g_cfg.dpSearch = uiSearchCfg(g_uiSearch);
-        log::info("panel: solve lv{} in-process{}{}{}{}, search {}", levelId,
+        log::info("panel: solve lv{} in-process, profile {}{}{}{}{}, search {}", levelId,
+                  uiProfileName(g_cfg.solveProfile),
                   g_uiCoins ? " with coins" : "", g_uiGlitch ? " avoiding glitches" : "",
                   g_uiGlitchMode >= UI_GLITCH_WAVE ? " (wave behaviour)" : "",
                   g_uiSecSolve ? "" : ", no section search", g_cfg.dpSearch);

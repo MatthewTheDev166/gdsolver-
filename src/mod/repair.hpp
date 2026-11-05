@@ -3102,6 +3102,14 @@ inline std::vector<std::string> baseArgs(const std::string& out,
         a.push_back("--wavetoggle");
         a.push_back(std::to_string(g_cfg.waveToggle));
     }
+    if (g_cfg.solveProfile != 0) {
+        a.push_back("--profile");
+        a.push_back(std::to_string(g_cfg.solveProfile));
+        if (g_cfg.solveProfile == PROFILE_HUMAN) {
+            a.push_back("--minpulse");
+            a.push_back("12");
+        }
+    }
     addWorldArgs(a);
     // cfg dprejoinwatch: the model's trace of the plan that last died,
     // for dp's --rejoinwatch (refwatch.hpp).
