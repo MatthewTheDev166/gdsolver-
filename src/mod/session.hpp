@@ -144,12 +144,11 @@ inline bool uiConfigureSession(int levelId) {
             g_cfg.wavePulse = 18;
             g_cfg.waveToggle = std::max(g_cfg.waveToggle, 20);
         } else if (g_cfg.solveProfile == PROFILE_HUMAN) {
-            // Human: the click rate is a soft cost in the search (a route that needs spam still survives),
-            // so no hard pulse limits here.
+            // Human: soft toggle cost & proximity cushion in search_dp.hpp; no hard pulse limits or forced centerline
             g_cfg.flyPulse = 0;
             g_cfg.wavePulse = 0;
-            g_cfg.waveTidy = (g_cfg.waveTidy > 0.0) ? g_cfg.waveTidy : 1.0;
-            g_cfg.waveCentre = (g_cfg.waveCentre > 0.0) ? g_cfg.waveCentre : 1.0;
+            g_cfg.waveTidy = 0.0;
+            g_cfg.waveCentre = 0.0;
         } else if (g_cfg.solveProfile == PROFILE_CENTERLINE) {
             g_cfg.flyPulse = 12;
             g_cfg.wavePulse = std::max(g_cfg.wavePulse, 12);

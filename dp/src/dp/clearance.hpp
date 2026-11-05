@@ -236,6 +236,55 @@ inline bool hazardAhead(const std::vector<const Obj*>& near, double px, double p
     return false;
 }
 
+// Is a lethal hazard OR a blocking solid wall directly ahead on the player's path within distAhead px?
+inline bool obstacleAhead(const std::vector<const Obj*>& near, double px, double py,
+                          double half, double distAhead, bool rev = false) {
+    if (!rev) {
+        const double front = px + half;
+        for (const Obj* o : near) {
+            if (o->type == 2 || o->type == 47 || o->slopeHazard) {
+                const double oLeft = o->cx - (o->radius > 0.0 ? o->radius : o->hw);
+                const double dx = oLeft - front;
+                if (dx >= -2.0 && dx < distAhead) {
+                    const double dy = std::fabs(py - o->cy);
+                    const double maxH = (o->radius > 0.0 ? o->radius : o->hh) + half;
+                    if (dy < maxH + 14.0) return true;
+                }
+            } else if (o->type == 0 && !o->oneway && !o->slope) {
+                const double oLeft = o->cx - o->hw;
+                const double dx = oLeft - front;
+                if (dx >= -2.0 && dx < distAhead) {
+                    const double dy = std::fabs(py - o->cy);
+                    const double maxH = o->hh + half - 2.0;
+                    if (dy < maxH) return true;
+                }
+            }
+        }
+    } else {
+        const double front = px - half;
+        for (const Obj* o : near) {
+            if (o->type == 2 || o->type == 47 || o->slopeHazard) {
+                const double oRight = o->cx + (o->radius > 0.0 ? o->radius : o->hw);
+                const double dx = front - oRight;
+                if (dx >= -2.0 && dx < distAhead) {
+                    const double dy = std::fabs(py - o->cy);
+                    const double maxH = (o->radius > 0.0 ? o->radius : o->hh) + half;
+                    if (dy < maxH + 14.0) return true;
+                }
+            } else if (o->type == 0 && !o->oneway && !o->slope) {
+                const double oRight = o->cx + o->hw;
+                const double dx = front - oRight;
+                if (dx >= -2.0 && dx < distAhead) {
+                    const double dy = std::fabs(py - o->cy);
+                    const double maxH = o->hh + half - 2.0;
+                    if (dy < maxH) return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
 // --wavetidy: how far a wave at (px, py) sits from the middle of the corridor it is flying, 0 at the middle and 1 at
 // a wall. The corridor is bounded below by the band's floor (+ the seat) and the highest solid top under it, above by
 // the band's ceiling (- the seat) and the lowest solid bottom over it; only solids whose x span the wave's box

@@ -1483,54 +1483,58 @@ inline int searchLayers(E& e, const Rules& rules, SearchResult& out) {
                     if ((int)s.action == input) {
                         kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 5);
                     }
-                } else if (g_solveProfile == 3) { // Human: easiest route, soft CPS band, centred, early clicks (all costs are soft: a route that needs more survives)
+                } else if (g_solveProfile == 3) { // Human: Min-Clicks foundation with safety clearance + early grounded anticipation
                     auto addTight = [&](int v) { kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + v); };
                     const double kx = (double)kid.s.xAbs, ky = (double)kid.s.y;
-                    // 1. Click rate. edgeAge = ticks since the last toggle (240 ticks/s; a toggle every 8 ticks is ~15 CPS).
-                    //    Above ~15 CPS the cost climbs, so spam is used only where no calmer route survives.
+
+                    // 1. Natural input toggle cost (foundation like Min Clicks):
+                    //    Penalize input toggles so the bot glides in wide, relaxed diagonals (3-5 CPS in open corridors)
+                    //    rather than doing robotic high-frequency micro-wiggles.
                     if (input != (int)s.action) {
-                        const int age = (int)s.edgeAge;
-                        if (age < 3)       addTight(60);    // > 40 CPS
-                        else if (age < 5)  addTight(30);    // 24-40 CPS
-                        else if (age < 8)  addTight(14);    // 15-24 CPS
-                        else if (age < 11) addTight(3);     // 11-15 CPS: allowed, slightly dearer than a relaxed rate
+                        if (isFlying || s.mode == 4) {
+                            addTight(65);
+                        }
                     }
-                    // 2. Flying modes: a very long unbroken hold or release (under ~2 CPS) is not how a person flies.
-                    //    Mild, per tick, and not while resting on a surface.
-                    if (isFlying && input == (int)s.action && !s.grounded && (int)s.edgeAge > 110)
-                        addTight(1);
-                    // 3. Never hug a hazard: graded cushion, wider for flying modes.
-                    if (hazardTightHere(near, kx, ky, half, 28.0)) {
-                        if (hazardTightHere(near, kx, ky, half, 8.0))       addTight(22);
-                        else if (hazardTightHere(near, kx, ky, half, 18.0)) addTight(7);
-                        else if (isFlying)                                  addTight(2);
+
+                    // 2. Safety cushion from solid blocks (ceiling, floor, blocks):
+                    //    Unlike raw Min Clicks (which touches ceiling/floor blocks at 0px), Human smoothly turns around
+                    //    with a comfortable 10-14px buffer.
+                    if (tightHere(near, kx, ky, half, 14.0)) {
+                        if (tightHere(near, kx, ky, half, 6.0))
+                            addTight(28);
+                        else
+                            addTight(10);
                     }
-                    // 4. Flying corridors: stay roughly centred. The middle 25% of the half-width on either side is free,
-                    //    so the line may drift a little the way a hand does.
-                    if (isFlying && kid.s.frame == 0) {
-                        const double off = corridorOffCentre(near, kx, ky, half,
-                                                             (double)kid.s.bandFloor, (double)kid.s.bandCeil,
-                                                             kid.s.mini ? kWaveClampMini : kWaveClamp);
-                        const double ex = std::max(0.0, std::fabs(off) - 0.25);
-                        addTight((int)(70.0 * ex * ex));
+
+                    // 3. Safety cushion from lethal hazards (spikes, saws):
+                    //    Gives spikes a generous 24px berth so it never hugs hazard hitboxes.
+                    if (hazardTightHere(near, kx, ky, half, 24.0)) {
+                        if (hazardTightHere(near, kx, ky, half, 10.0))
+                            addTight(40);
+                        else
+                            addTight(15);
                     }
-                    // 5. Cube / Ball / Robot / Spider: do not wait until the last moment to jump, flip or teleport.
-                    //    The look-ahead scales with speed (a human reacts to time, not to pixels).
+
+                    // 4. Cube / Ball / Robot / Spider: decisive early jumps, flips and teleports.
+                    //    Checks both lethal hazards AND solid blocking walls ahead. Lookahead scales with speed.
                     if (s.grounded && (s.mode == 0 || s.mode == 2 || s.mode == 5 || s.mode == 6)) {
                         const double sc = std::max(1.0, (double)((s.dx > 0.f) ? s.dx : 1.298f) / 1.298);
-                        const double lateD = 22.0 * sc;
-                        const double medD  = ((s.mode == 6) ? 42.0 : (s.mode == 2) ? 40.0 : 38.0) * sc;
-                        const double farD  = ((s.mode == 6) ? 62.0 : (s.mode == 2) ? 58.0 : 54.0) * sc;
+                        const double lateD = 25.0 * sc;
+                        const double medD  = ((s.mode == 6) ? 48.0 : (s.mode == 2) ? 46.0 : 42.0) * sc;
+                        const double farD  = ((s.mode == 6) ? 70.0 : (s.mode == 2) ? 66.0 : 60.0) * sc;
                         const bool rv = s.rev != 0;
-                        if (hazardAhead(near, kx, ky, half, lateD, rv))      addTight(60);
-                        else if (hazardAhead(near, kx, ky, half, medD, rv))  addTight(25);
-                        else if (hazardAhead(near, kx, ky, half, farD, rv))  addTight(8);
+                        if (obstacleAhead(near, kx, ky, half, lateD, rv))      addTight(120);
+                        else if (obstacleAhead(near, kx, ky, half, medD, rv))  addTight(45);
+                        else if (obstacleAhead(near, kx, ky, half, farD, rv))  addTight(14);
                     }
-                    // 6. No pointless mid-air clicks when no orb is around (Cube, Ball, Robot, Spider).
+
+                    // 5. No pointless mid-air clicks when no orb is around (Cube, Ball, Robot, Spider).
                     if (!s.grounded && orbsEmpty && (s.mode == 0 || s.mode == 2 || s.mode == 5 || s.mode == 6)
-                        && input != (int)s.action)
-                        addTight(50);
-                    // 7. Orbs: hit them near their middle, not on the exit edge.
+                        && input != (int)s.action) {
+                        addTight(60);
+                    }
+
+                    // 6. Orbs: hit them near their center, not on the late exit edge.
                     if (kid.s.usedOrb != nullptr && kid.s.usedOrb != s.usedOrb) {
                         const double orbOff = kx - kid.s.usedOrb->cx;
                         if (orbOff > 10.0)     addTight(35);
