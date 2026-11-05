@@ -210,6 +210,30 @@ inline double waveOffCentre(const std::vector<const Obj*>& near, double px, doub
     return off > 1.0 ? 1.0 : off;
 }
 
+// General corridor off-centre: measures corridor bounds between floor/solids/hazards under (px, py)
+// and ceiling/solids/hazards above (px, py), returning 0 at the dead center and 1 at boundaries.
+inline double corridorOffCentre(const std::vector<const Obj*>& near, double px, double py, double half,
+                                double bandFloor, double bandCeil, double seat) {
+    double lo = std::max(bandFloor, 0.0) + seat;
+    double hi = bandCeil < 1e8 ? bandCeil - seat : 1e18;
+    const double pl = px - half, pr = px + half;
+    for (const Obj* o : near) {
+        if (o->slope || o->oriented || o->oneway) continue;
+        if (o->type != 0 && o->type != 2 && o->type != 47) continue;
+        if (o->cx + o->hw <= pl || o->cx - o->hw >= pr) continue;
+        const double b = o->cy - o->hh, t = o->cy + o->hh;
+        if (t <= py) lo = std::max(lo, t + half);
+        else if (b >= py) hi = std::min(hi, b - half);
+    }
+    if (hi >= 1e17) {
+        const double r = 1.0 - (py - lo) / 150.0;
+        return r < 0.0 ? 0.0 : (r > 1.0 ? 1.0 : r);
+    }
+    if (hi - lo < 1e-6) return 1.0;
+    const double off = std::fabs(py - 0.5 * (lo + hi)) / (0.5 * (hi - lo));
+    return off > 1.0 ? 1.0 : off;
+}
+
 // Lower is roomier. Ties keep the incumbent, so with the score off (every
 // `tight` still 0) this is exactly "the first accepted ordinal wins" -- the rule
 // that is there today, which is how the flag-off path stays bit-identical.

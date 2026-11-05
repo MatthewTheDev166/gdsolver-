@@ -175,6 +175,7 @@ struct Config {
     // tried without a rebuild.
     bool dpSolve = false;
     int solveProfile = 0;   // Training profile: 0 Normal, 1 Min Clicks, 2 Max Clicks, 3 Human, 4 Centerline, 5 Close-Call
+    int flyPulse = 0;       // --flypulse for Ship, UFO, Swing
     // `dphorizon` is THE LENGTH OF THE PLAN in ticks, not the depth of the search. 0 = derive
     // it from the level, which is the only sane default for a single solve: with a fixed 3000
     // the plan simply stops there and the player dies where it ran out -- measured on lv1,

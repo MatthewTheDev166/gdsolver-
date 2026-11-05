@@ -54,6 +54,9 @@ inline int g_inputGrid = 0;
 //                  ticks, which is what the search plans when nothing asks it not to. Off at 0/1; a
 //                  search restriction like --minpulse, not physics.
 inline int g_wavePulse = 0;
+//   --flypulse K   --minpulse for FLYING modes (Ship 1, UFO 3, Swing 7): keeps input level for at least K ticks
+//                  to prevent high-frequency micro-jitter in open air.
+inline int g_flyPulse = 0;
 // --gridmap x0:k0,x1:k1,...: the input grid as a step function of the frontier's leading x (the
 // previous layer's, as --capmap reads it). From x_i on the grid is k_i, where 0 means
 // --inputgrid's value and 1 means none; before the first entry it is --inputgrid. Empty =

@@ -739,6 +739,7 @@ protected:
     ButtonSprite* m_exportSpr = nullptr;
     CCMenuItemSpriteExtra* m_exportBtn = nullptr;
     int m_profile = PROFILE_NORMAL;
+    cocos2d::CCLabelBMFont* m_profileDesc = nullptr;
     ButtonSprite* m_profileSpr[PROFILE_COUNT] = {};
     CCMenuItemSpriteExtra* m_profileBtn[PROFILE_COUNT] = {};
 
@@ -756,10 +757,11 @@ protected:
     // 2026-10-01), and the setting itself from mod.json (2026-10-16): cfg dpplainbeside=3 is its only way in.
     // Even so the popup can be taller than the screen -- GD's design height is 320 -- so
     // shrinkToFit scales it down to fit.
-    static constexpr float kW = 340.f, kH = 296.f;
-    static constexpr float kModeY = -88.f, kDescY = -128.f, kCoinY = -160.f, kExportY = -197.f;   // from the top edge
-    static constexpr float kProfileRow1Y = -185.f, kProfileRow2Y = -210.f;
-    static constexpr float kNoteY = 62.f, kStartY = 30.f;   // from the bottom edge
+    static constexpr float kW = 340.f, kH = 300.f;
+    static constexpr float kModeY = -82.f, kDescY = -114.f, kCoinY = -146.f, kExportY = -190.f;   // from the top edge
+    static constexpr float kProfileDescY = -170.f;
+    static constexpr float kProfileRow1Y = -194.f, kProfileRow2Y = -222.f;
+    static constexpr float kNoteY = 56.f, kStartY = 28.f;   // from the bottom edge
     static constexpr float kNoteRow = 14.f;   // the level's notes stack up from the bot note
 
     static std::string modVersion() { return Mod::get()->getVersion().toVString(); }
@@ -964,12 +966,18 @@ protected:
 
         m_profile = std::clamp(Mod::get()->getSavedValue<int>("play-profile", PROFILE_NORMAL),
                                0, PROFILE_COUNT - 1);
+        m_profileDesc = CCLabelBMFont::create("", "chatFont.fnt", 320.f, kCCTextAlignmentCenter);
+        m_profileDesc->setScale(.55f);
+        m_profileDesc->setColor({255, 230, 140});
+        m_profileDesc->setID("profile-desc"_spr);
+        ui::addChildAtPosition(m_mainLayer, m_profileDesc, Anchor::Top, ccp(0.f, kProfileDescY));
+
         const float colX[3] = {-98.f, 0.f, 98.f};
         for (int p = 0; p < PROFILE_COUNT; ++p) {
             const float y = (p < 3) ? kProfileRow1Y : kProfileRow2Y;
             const float x = colX[p % 3];
-            m_profileSpr[p] = ButtonSprite::create(uiProfileName(p), 86, true, "goldFont.fnt",
-                                                  "GJ_button_04.png", 22.f, .45f);
+            m_profileSpr[p] = ButtonSprite::create(uiProfileName(p), 88, true, "goldFont.fnt",
+                                                  "GJ_button_04.png", 22.f, .42f);
             m_profileBtn[p] = CCMenuItemSpriteExtra::create(m_profileSpr[p], this,
                                                            menu_selector(Popup::onProfile));
             m_profileBtn[p]->setTag(p);
@@ -1093,18 +1101,11 @@ protected:
                                                cocos2d::CCPoint(ui::scaledContentWidth(label) / 2.f + 12.f, y));
             }
         }
-        if (m_mode == UI_MODE_SOLVE) {
-            std::string descText = ok ? describe(m_mode, m_coins) : "";
-            descText += "\n";
-            descText += describeProfile(m_profile);
-            m_desc->setString(descText.c_str());
-        } else {
-            m_desc->setString(ok ? describe(m_mode, m_coins)
-                                 : (m_coins ? "No stored coin solution for this level yet.\n"
-                                              "Solve it with Coins on first."
-                                            : "No stored solution for this level yet.\n"
-                                              "Solve it first."));
-        }
+        m_desc->setString(ok ? describe(m_mode, m_coins)
+                             : (m_coins ? "No stored coin solution for this level yet.\n"
+                                          "Solve it with Coins on first."
+                                        : "No stored solution for this level yet.\n"
+                                          "Solve it first."));
         m_desc->setColor(ok ? kWhite : kRefused);
         m_startBtn->setEnabled(ok);
         m_startSpr->setColor(ok ? kWhite : kDim);
@@ -1118,6 +1119,12 @@ protected:
             m_exportBtn->setEnabled(false);
         }
         const bool isSolve = (m_mode == UI_MODE_SOLVE);
+        if (m_profileDesc) {
+            m_profileDesc->setVisible(isSolve);
+            if (isSolve) {
+                m_profileDesc->setString(describeProfile(m_profile));
+            }
+        }
         for (int p = 0; p < PROFILE_COUNT; ++p) {
             if (m_profileBtn[p]) {
                 m_profileBtn[p]->setVisible(isSolve);

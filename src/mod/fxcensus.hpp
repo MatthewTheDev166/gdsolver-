@@ -190,12 +190,12 @@ inline const char* uiProfileName(int p) {
 
 inline const char* describeProfile(int p) {
     switch (p) {
-        case PROFILE_MIN_CLICKS: return "Min Clicks: solves with the fewest clicks";
+        case PROFILE_MIN_CLICKS: return "Min Clicks: fewest clicks, long smooth glides";
         case PROFILE_MAX_CLICKS: return "Max Clicks: spam challenge (highest safe CPS)";
-        case PROFILE_HUMAN: return "Human: smooth inputs, caps CPS around 20";
-        case PROFILE_CENTERLINE: return "Centerline: hugs the center of corridors";
-        case PROFILE_CLOSE_CALL: return "Close-Call: skims close to hazard hitboxes";
-        default: return "Normal: standard solver profile";
+        case PROFILE_HUMAN: return "Human: 18px spike clearance, natural click rate";
+        case PROFILE_CENTERLINE: return "Centerline: hugs center of flight corridors";
+        case PROFILE_CLOSE_CALL: return "Close-Call: near-miss showcase along hazards";
+        default: return "Normal: standard reachability solver";
     }
 }
 

@@ -1469,25 +1469,47 @@ inline int searchLayers(E& e, const Rules& rules, SearchResult& out) {
             // already, so this only adds this tick's own contribution). Read by
             // the goal pick below; nothing else looks at it.
             if (!dead && kid.s.tight < 0xffff) {
-                if (g_solveProfile == 1) { // Min Clicks: penalize any input toggle/press
+                const double half = playerHalf(kid.s.mode, kid.s.mini != 0);
+                const bool isFlying = (kid.s.mode == 1 || kid.s.mode == 3 || kid.s.mode == 4 || kid.s.mode == 7);
+
+                if (g_solveProfile == 1) { // Min Clicks: heavily penalize ANY input toggle
                     if ((int)s.action != input) {
-                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 20);
+                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 200);
                     }
-                } else if (g_solveProfile == 2) { // Max Clicks: penalize staying in the same input
+                } else if (g_solveProfile == 2) { // Max Clicks: penalize staying in the same input (reward spam)
                     if ((int)s.action == input) {
-                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 2);
+                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 5);
                     }
-                } else if (g_solveProfile == 4) { // Centerline: heavy penalty for being near obstacles
-                    if (tightHere(near, (double)kid.s.xAbs, (double)kid.s.y,
-                                  playerHalf(kid.s.mode, kid.s.mini != 0), kTightPx * 2.5))
-                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 6);
-                } else if (g_solveProfile == 5) { // Close-Call: reward being near obstacles (penalize open air)
-                    if (!tightHere(near, (double)kid.s.xAbs, (double)kid.s.y,
-                                   playerHalf(kid.s.mode, kid.s.mini != 0), kTightPx))
-                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 2);
+                } else if (g_solveProfile == 3) { // Human: generous hazard buffer (18px) + gentle flight centering
+                    if (tightHere(near, (double)kid.s.xAbs, (double)kid.s.y, half, 18.0)) {
+                        if (tightHere(near, (double)kid.s.xAbs, (double)kid.s.y, half, 8.0))
+                            kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 15);
+                        else
+                            kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 4);
+                    }
+                    if (isFlying && kid.s.frame == 0) {
+                        const double off = corridorOffCentre(near, (double)kid.s.xAbs, (double)kid.s.y, half,
+                                                             (double)kid.s.bandFloor, (double)kid.s.bandCeil,
+                                                             kid.s.mini ? kWaveClampMini : kWaveClamp);
+                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + (int)(15.0 * off * off));
+                    }
+                } else if (g_solveProfile == 4) { // Centerline: true corridor centering for all flying modes + clearance
+                    if (isFlying && kid.s.frame == 0) {
+                        const double off = corridorOffCentre(near, (double)kid.s.xAbs, (double)kid.s.y, half,
+                                                             (double)kid.s.bandFloor, (double)kid.s.bandCeil,
+                                                             kid.s.mini ? kWaveClampMini : kWaveClamp);
+                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + (int)(60.0 * off * off));
+                    }
+                    if (tightHere(near, (double)kid.s.xAbs, (double)kid.s.y, half, 22.0)) {
+                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 10);
+                    }
+                } else if (g_solveProfile == 5) { // Close-Call: cinematic near-misses (reward 4-14px from hazard, penalize open air)
+                    const bool nearHazard = tightHere(near, (double)kid.s.xAbs, (double)kid.s.y, half, 14.0);
+                    if (!nearHazard) {
+                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 4);
+                    }
                 } else {
-                    if (tightHere(near, (double)kid.s.xAbs, (double)kid.s.y,
-                                  playerHalf(kid.s.mode, kid.s.mini != 0), kTightPx))
+                    if (tightHere(near, (double)kid.s.xAbs, (double)kid.s.y, half, kTightPx))
                         ++kid.s.tight;
                 }
             }
@@ -1584,7 +1606,7 @@ inline int searchLayers(E& e, const Rules& rules, SearchResult& out) {
                 auto pressedFrom = [&](const Child& rel) {
                     Child k = rel;
                     k.s.action = 1;
-                    if (g_minPulse > 1 || g_wavePulse > 1)   // --wavepulse reads edgeAge too
+                    if (g_minPulse > 1 || g_wavePulse > 1 || g_flyPulse > 1)   // --wavepulse/--flypulse reads edgeAge too
                         k.s.edgeAge = (p.action != 1)
                                           ? 0 : (uint8_t)std::min(254, (int)p.edgeAge + 1);
                     if (g_heldAll) {

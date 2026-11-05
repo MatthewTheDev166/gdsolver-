@@ -2008,6 +2008,7 @@ inline int cliMainOnce(int argc, char** argv) {
         if (!std::strcmp(argv[i], "--minpulse")) g_minPulse = std::atoi(argv[i + 1]);
         if (!std::strcmp(argv[i], "--inputgrid")) g_inputGrid = std::atoi(argv[i + 1]);
         if (!std::strcmp(argv[i], "--wavepulse")) g_wavePulse = std::atoi(argv[i + 1]);   // the wave-behaviour option
+        if (!std::strcmp(argv[i], "--flypulse")) g_flyPulse = std::atoi(argv[i + 1]);
         if (!std::strcmp(argv[i], "--shipvq")) g_shipVq = std::atof(argv[i + 1]);
         if (!std::strcmp(argv[i], "--snaplog")) snapLogPath = argv[i + 1];
         // [2026-08-31] --shipceil / --ceil / --flyfloor / --ufoceil ARE GONE.

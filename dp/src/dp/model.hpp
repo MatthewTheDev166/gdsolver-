@@ -600,6 +600,7 @@ inline void fireAutoTriggers(const std::vector<State>& frontier, long long t) {
 inline bool edgeLocked(const State& s, int gridNow, long long t) {
     return (g_minPulse > 1 && (int)s.edgeAge + 1 < g_minPulse)
            || (g_wavePulse > 1 && s.mode == 4 && (int)s.edgeAge + 1 < g_wavePulse)   // --wavepulse
+           || (g_flyPulse > 1 && (s.mode == 1 || s.mode == 3 || s.mode == 7) && (int)s.edgeAge + 1 < g_flyPulse) // --flypulse
            || (gridNow > 1 && (t % gridNow) != 0);
 }
 // May `s` take `input` on tick t? Not a change the button cannot make (edgeLocked), and not an edge
@@ -617,7 +618,7 @@ inline bool inputAllowed(const State& s, int input, int gridNow, long long t) {
 // lock (a mode with latency 2 entered from one without).
 inline void noteInput(const State& prev, State& c, int input) {
     c.action = (uint8_t)input;
-    if (g_minPulse > 1 || g_wavePulse > 1)
+    if (g_minPulse > 1 || g_wavePulse > 1 || g_flyPulse > 1)
         c.edgeAge = (input != (int)prev.action) ? 0 : (uint8_t)std::min(254, (int)prev.edgeAge + 1);
     const auto lat2 = [](uint8_t m) { return m == 1 || m == 3; };
     c.latLock = (lat2(c.mode) && !lat2(prev.mode) && !c.dual) ? 1 : 0;
