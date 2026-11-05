@@ -209,7 +209,7 @@ inline double g_waveCentre = 0.0;
 //                       keeps the tidier route into a cell.
 inline double g_waveTidy = 0.0;
 inline int g_waveToggle = 0;
-// --profile <n>: 0 Normal, 1 Min Clicks, 2 Max Clicks, 3 Human, 4 Centerline, 5 Close-Call
+// --profile <n>: 0 Normal, 1 Min Clicks, 2 Max Clicks, 3 Hardest, 4 Centerline, 5 Close-Call
 inline int g_solveProfile = 0;
 //   --startedge <ticks>  an anchored call: the ticks the button had already been in its present state at the anchor
 //                        (State::edgeAge of the start state; -1 = not said, which leaves it at "long ago"). The mod

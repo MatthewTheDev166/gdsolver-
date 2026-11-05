@@ -1483,46 +1483,26 @@ inline int searchLayers(E& e, const Rules& rules, SearchResult& out) {
                     if ((int)s.action == input) {
                         kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 5);
                     }
-                } else if (g_solveProfile == 3) { // Human: generous hazard cushion + natural jump anticipation + clean clicks
-                    // 1. Hazard proximity cushion (giving spikes an 18px berth)
-                    if (hazardTightHere(near, (double)kid.s.xAbs, (double)kid.s.y, half, 18.0)) {
-                        if (hazardTightHere(near, (double)kid.s.xAbs, (double)kid.s.y, half, 8.0))
-                            kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 20);
-                        else
-                            kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 6);
+                } else if (g_solveProfile == 3) { // Hardest: swag routes, portal skips, needle threading & high-CPS micro-spams
+                    // 1. Swag routes: penalize gamemode portal transitions so the solver actively hunts for
+                    //    bypasses/skips to stay in Wave, Ship, etc. through unintended parts of the level.
+                    if (kid.s.mode != s.mode) {
+                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 300);
                     }
-                    // 2. Natural jump / flip / teleport anticipation: penalize waiting on the ground/ceiling before a hazard
-                    // Fully covers all grounded/platform modes: Cube (0), Ball (2), Robot (5), Spider (6)
-                    if (s.grounded && (s.mode == 0 || s.mode == 2 || s.mode == 5 || s.mode == 6)) {
-                        const double distLate = 20.0;
-                        const double distMed  = (s.mode == 6) ? 38.0 : (s.mode == 2) ? 36.0 : 34.0;
-                        const double distFar  = (s.mode == 6) ? 56.0 : (s.mode == 2) ? 52.0 : 48.0;
-                        if (hazardAhead(near, (double)kid.s.xAbs, (double)kid.s.y, half, distLate, s.rev != 0)) {
-                            kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 60);
-                        } else if (hazardAhead(near, (double)kid.s.xAbs, (double)kid.s.y, half, distMed, s.rev != 0)) {
-                            kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 25);
-                        } else if (hazardAhead(near, (double)kid.s.xAbs, (double)kid.s.y, half, distFar, s.rev != 0)) {
-                            kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 8);
-                        }
+                    // 2. Needle threading: reward navigating through the tightest possible hazard margins.
+                    //    Penalize floating safely in wide-open, boring space (>16px from lethal hazards).
+                    const bool razorTight = hazardTightHere(near, (double)kid.s.xAbs, (double)kid.s.y, half, 5.0);
+                    const bool nearHazard = hazardTightHere(near, (double)kid.s.xAbs, (double)kid.s.y, half, 16.0);
+                    if (!nearHazard) {
+                        // Open space is "too easy" -- penalize it to force the bot toward the hardest/tightest routes
+                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 8);
+                    } else if (!razorTight) {
+                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 2);
                     }
-                    // 3. No pointless mid-air clicks when airborne and no orbs around (Cube, Ball, Robot, Spider)
-                    if (!s.grounded && orbsEmpty && (s.mode == 0 || s.mode == 2 || s.mode == 5 || s.mode == 6) && input != (int)s.action) {
-                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 50);
-                    }
-                    // 4. Natural orb click timing (avoid late exit-edge clicks; prefer center)
-                    if (kid.s.usedOrb != nullptr && kid.s.usedOrb != s.usedOrb) {
-                        const double orbOff = (double)kid.s.xAbs - kid.s.usedOrb->cx;
-                        if (orbOff > 10.0)
-                            kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 35);
-                        else if (orbOff > 3.0)
-                            kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 12);
-                    }
-                    // 5. Smooth corridor centering in flight modes (Ship 1, UFO 3, Wave 4, Swing 7)
-                    if (isFlying && kid.s.frame == 0) {
-                        const double off = corridorOffCentre(near, (double)kid.s.xAbs, (double)kid.s.y, half,
-                                                             (double)kid.s.bandFloor, (double)kid.s.bandCeil,
-                                                             kid.s.mini ? kWaveClampMini : kWaveClamp);
-                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + (int)(18.0 * off * off));
+                    // 3. High-CPS micro-maneuvers: penalize coasting or staying idle in the same input state
+                    //    (especially in wave or flying modes where rapid micro-taps thread tight gaps).
+                    if ((int)s.action == input && (isFlying || s.mode == 4)) {
+                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 4);
                     }
                 } else if (g_solveProfile == 4) { // Centerline: true corridor centering for all flying modes + clearance
                     if (isFlying && kid.s.frame == 0) {
