@@ -171,7 +171,7 @@ enum SolveProfile {
     PROFILE_NORMAL = 0,
     PROFILE_MIN_CLICKS = 1,
     PROFILE_MAX_CLICKS = 2,
-    PROFILE_HARDEST = 3,
+    PROFILE_HUMAN = 3,
     PROFILE_CENTERLINE = 4,
     PROFILE_CLOSE_CALL = 5,
     PROFILE_COUNT = 6
@@ -181,7 +181,7 @@ inline const char* uiProfileName(int p) {
     switch (p) {
         case PROFILE_MIN_CLICKS: return "Min Clicks";
         case PROFILE_MAX_CLICKS: return "Max Clicks";
-        case PROFILE_HARDEST: return "Hardest";
+        case PROFILE_HUMAN: return "Human";
         case PROFILE_CENTERLINE: return "Centerline";
         case PROFILE_CLOSE_CALL: return "Close-Call";
         default: return "Normal";
@@ -192,7 +192,7 @@ inline const char* describeProfile(int p) {
     switch (p) {
         case PROFILE_MIN_CLICKS: return "Min Clicks: fewest clicks, long smooth glides";
         case PROFILE_MAX_CLICKS: return "Max Clicks: spam challenge (highest safe CPS)";
-        case PROFILE_HARDEST: return "Hardest: swag routes, portal skips & tight gaps";
+        case PROFILE_HUMAN: return "Human: easiest route, relaxed CPS, centred, early clicks";
         case PROFILE_CENTERLINE: return "Centerline: hugs center of flight corridors";
         case PROFILE_CLOSE_CALL: return "Close-Call: near-miss showcase along hazards";
         default: return "Normal: standard reachability solver";
