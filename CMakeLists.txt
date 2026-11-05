@@ -55,6 +55,9 @@ if (GDSOLVER_BUILD_MOD)
     # below, without the mod's options and prelude.
     list(REMOVE_ITEM SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/mod/dp_bridge2.cpp)
     add_library(${PROJECT_NAME} SHARED ${SOURCES})
+    if (MSVC)
+        target_compile_options(${PROJECT_NAME} PRIVATE /MP)
+    endif()
     # src/mod/*.hpp include each other and the solver/ headers by path from src/
     target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     if (GDSOLVER_TEST_INSTRUMENTS)

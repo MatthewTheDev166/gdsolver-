@@ -185,11 +185,11 @@ inline bool tightHere(const std::vector<const Obj*>& near, double px, double py,
     return false;
 }
 
-// Check specifically lethal hazards (spikes type 2, saws type 47) without counting solid blocks
+// Check specifically lethal hazards (spikes type 2, saws type 47, slope hazards) without counting solid blocks
 inline bool hazardTightHere(const std::vector<const Obj*>& near, double px, double py,
                             double half, double eps) {
     for (const Obj* o : near) {
-        if (o->type == 2 || o->type == 47) {
+        if (o->type == 2 || o->type == 47 || o->slopeHazard) {
             if (o->radius > 0.0) {
                 const double dx = px - o->cx, dy = py - o->cy;
                 const double r = o->radius + half + eps;
@@ -205,16 +205,31 @@ inline bool hazardTightHere(const std::vector<const Obj*>& near, double px, doub
 
 // Is a lethal hazard directly ahead on the player's path within distAhead px?
 inline bool hazardAhead(const std::vector<const Obj*>& near, double px, double py,
-                        double half, double distAhead) {
-    const double front = px + half;
-    for (const Obj* o : near) {
-        if (o->type == 2 || o->type == 47) {
-            const double oLeft = o->cx - (o->radius > 0.0 ? o->radius : o->hw);
-            const double dx = oLeft - front;
-            if (dx >= -2.0 && dx < distAhead) {
-                const double dy = std::fabs(py - o->cy);
-                const double maxH = (o->radius > 0.0 ? o->radius : o->hh) + half;
-                if (dy < maxH + 12.0) return true;
+                        double half, double distAhead, bool rev = false) {
+    if (!rev) {
+        const double front = px + half;
+        for (const Obj* o : near) {
+            if (o->type == 2 || o->type == 47 || o->slopeHazard) {
+                const double oLeft = o->cx - (o->radius > 0.0 ? o->radius : o->hw);
+                const double dx = oLeft - front;
+                if (dx >= -2.0 && dx < distAhead) {
+                    const double dy = std::fabs(py - o->cy);
+                    const double maxH = (o->radius > 0.0 ? o->radius : o->hh) + half;
+                    if (dy < maxH + 14.0) return true;
+                }
+            }
+        }
+    } else {
+        const double front = px - half;
+        for (const Obj* o : near) {
+            if (o->type == 2 || o->type == 47 || o->slopeHazard) {
+                const double oRight = o->cx + (o->radius > 0.0 ? o->radius : o->hw);
+                const double dx = front - oRight;
+                if (dx >= -2.0 && dx < distAhead) {
+                    const double dy = std::fabs(py - o->cy);
+                    const double maxH = (o->radius > 0.0 ? o->radius : o->hh) + half;
+                    if (dy < maxH + 14.0) return true;
+                }
             }
         }
     }

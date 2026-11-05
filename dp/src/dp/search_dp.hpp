@@ -1476,7 +1476,7 @@ inline int searchLayers(E& e, const Rules& rules, SearchResult& out) {
                     if ((int)s.action != input) {
                         kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 200);
                     }
-                    if (!s.grounded && orbsEmpty && (s.mode == 0 || s.mode == 2) && input != (int)s.action) {
+                    if (!s.grounded && orbsEmpty && (s.mode == 0 || s.mode == 2 || s.mode == 5 || s.mode == 6) && input != (int)s.action) {
                         kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 100);
                     }
                 } else if (g_solveProfile == 2) { // Max Clicks: penalize staying in the same input (reward spam)
@@ -1487,28 +1487,42 @@ inline int searchLayers(E& e, const Rules& rules, SearchResult& out) {
                     // 1. Hazard proximity cushion (giving spikes an 18px berth)
                     if (hazardTightHere(near, (double)kid.s.xAbs, (double)kid.s.y, half, 18.0)) {
                         if (hazardTightHere(near, (double)kid.s.xAbs, (double)kid.s.y, half, 8.0))
-                            kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 15);
+                            kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 20);
                         else
-                            kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 4);
+                            kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 6);
                     }
-                    // 2. Natural jump anticipation: penalize waiting on the ground until <26px before a hazard
-                    if (s.grounded && (s.mode == 0 || s.mode == 5) && hazardAhead(near, (double)kid.s.xAbs, (double)kid.s.y, half, 26.0)) {
-                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 30);
+                    // 2. Natural jump / flip / teleport anticipation: penalize waiting on the ground/ceiling before a hazard
+                    // Fully covers all grounded/platform modes: Cube (0), Ball (2), Robot (5), Spider (6)
+                    if (s.grounded && (s.mode == 0 || s.mode == 2 || s.mode == 5 || s.mode == 6)) {
+                        const double distLate = 20.0;
+                        const double distMed  = (s.mode == 6) ? 38.0 : (s.mode == 2) ? 36.0 : 34.0;
+                        const double distFar  = (s.mode == 6) ? 56.0 : (s.mode == 2) ? 52.0 : 48.0;
+                        if (hazardAhead(near, (double)kid.s.xAbs, (double)kid.s.y, half, distLate, s.rev != 0)) {
+                            kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 60);
+                        } else if (hazardAhead(near, (double)kid.s.xAbs, (double)kid.s.y, half, distMed, s.rev != 0)) {
+                            kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 25);
+                        } else if (hazardAhead(near, (double)kid.s.xAbs, (double)kid.s.y, half, distFar, s.rev != 0)) {
+                            kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 8);
+                        }
                     }
-                    // 3. No pointless mid-air clicks when airborne and no orbs around
-                    if (!s.grounded && orbsEmpty && (s.mode == 0 || s.mode == 2) && input != (int)s.action) {
+                    // 3. No pointless mid-air clicks when airborne and no orbs around (Cube, Ball, Robot, Spider)
+                    if (!s.grounded && orbsEmpty && (s.mode == 0 || s.mode == 2 || s.mode == 5 || s.mode == 6) && input != (int)s.action) {
                         kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 50);
                     }
-                    // 4. Natural orb click timing (avoid late exit-edge clicks)
-                    if (kid.s.usedOrb != nullptr && kid.s.usedOrb != s.usedOrb && (double)kid.s.xAbs > kid.s.usedOrb->cx + 10.0) {
-                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 20);
+                    // 4. Natural orb click timing (avoid late exit-edge clicks; prefer center)
+                    if (kid.s.usedOrb != nullptr && kid.s.usedOrb != s.usedOrb) {
+                        const double orbOff = (double)kid.s.xAbs - kid.s.usedOrb->cx;
+                        if (orbOff > 10.0)
+                            kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 35);
+                        else if (orbOff > 3.0)
+                            kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 12);
                     }
-                    // 5. Smooth corridor centering in flight modes
+                    // 5. Smooth corridor centering in flight modes (Ship 1, UFO 3, Wave 4, Swing 7)
                     if (isFlying && kid.s.frame == 0) {
                         const double off = corridorOffCentre(near, (double)kid.s.xAbs, (double)kid.s.y, half,
                                                              (double)kid.s.bandFloor, (double)kid.s.bandCeil,
                                                              kid.s.mini ? kWaveClampMini : kWaveClamp);
-                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + (int)(15.0 * off * off));
+                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + (int)(18.0 * off * off));
                     }
                 } else if (g_solveProfile == 4) { // Centerline: true corridor centering for all flying modes + clearance
                     if (isFlying && kid.s.frame == 0) {
