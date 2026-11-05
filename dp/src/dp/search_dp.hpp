@@ -285,14 +285,26 @@ struct CurrentRules {
         return (coinOn ? 1e7 * popCount32((uint32_t)s.coins) : 0.0) + progressOf(s).x;
     }
     // --coinpick: the state a cut or a PARTIAL emits -- the first one holding the most coins.
-    // Without --coins it is front().
+    // Without --coins it is front() (or lowest tight when a solve profile is active).
     const State& pick(const std::vector<State>& v) const {
         size_t best = 0;
         if (coinOn) {
             int most = -1;
             for (size_t i = 0; i < v.size(); ++i) {
                 const int c = popCount32((uint32_t)v[i].coins);
-                if (c > most) { most = c; best = i; }
+                if (c > most || (g_solveProfile != 0 && c == most
+                                 && (v[i].tight < v[best].tight
+                                     || (v[i].tight == v[best].tight && v[i].edgeAge > v[best].edgeAge)))) {
+                    most = c;
+                    best = i;
+                }
+            }
+        } else if (g_solveProfile != 0) {
+            for (size_t i = 1; i < v.size(); ++i) {
+                if (v[i].tight < v[best].tight
+                    || (v[i].tight == v[best].tight && v[i].edgeAge > v[best].edgeAge)) {
+                    best = i;
+                }
             }
         }
         return v[best];
@@ -1086,6 +1098,11 @@ inline int searchLayers(E& e, const Rules& rules, SearchResult& out) {
                     goalState = s;
                 }
             };
+            auto betterSlot = [&](const State& cand, const State& inc) {
+                return g_solveProfile != 0
+                       && (cand.tight < inc.tight
+                           || (cand.tight == inc.tight && cand.edgeAge > inc.edgeAge));
+            };
             Slots& sl = seen.at(k);
             if (sl.hi < 0) {
                 nxt.push_back(State{});
@@ -1102,6 +1119,13 @@ inline int searchLayers(E& e, const Rules& rules, SearchResult& out) {
                     nxt.push_back(State{});
                     sl.lo = (int)nxt.size() - 1;
                 }
+                finish(nxt[(size_t)sl.lo]);
+            } else if (std::fabs((double)s.vy - (double)nxt[(size_t)sl.hi].vy) <= 1e-9
+                       && betterSlot(s, nxt[(size_t)sl.hi])) {
+                finish(nxt[(size_t)sl.hi]);
+            } else if (sl.hi != sl.lo
+                       && std::fabs((double)s.vy - (double)nxt[(size_t)sl.lo].vy) <= 1e-9
+                       && betterSlot(s, nxt[(size_t)sl.lo])) {
                 finish(nxt[(size_t)sl.lo]);
             }
         };
@@ -1483,78 +1507,123 @@ inline int searchLayers(E& e, const Rules& rules, SearchResult& out) {
                     if ((int)s.action == input) {
                         kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 5);
                     }
-                } else if (g_solveProfile == 3) { // Human: blend of Min Clicks & Centerline + safety buffers & early anticipation
+                } else if (g_solveProfile == 3) { // Human: blend of Min Clicks & Centerline + safety buffers & early anticipation across all modes
                     auto addTight = [&](int v) { kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + v); };
                     const double kx = (double)kid.s.xAbs, ky = (double)kid.s.y;
+                    const double mScale = kid.s.mini ? 0.65 : 1.0;
+                    const int age = (int)s.edgeAge;
+                    const bool holdSteered = (s.mode == 1 || s.mode == 4); // Ship & Wave: both press and release steer
 
-                    // 1. Min Clicks foundation with stroke commitment:
-                    //    Penalize input toggles so the bot makes wide, relaxed, human diagonals (3-5 CPS in open corridors)
-                    //    rather than doing robotic micro-wiggles. Penalize short pulses (<8 ticks) to eliminate boundary chatter.
-                    if (input != (int)s.action) {
-                        if (isFlying || s.mode == 4) {
-                            addTight(70);
-                            const int age = (int)s.edgeAge;
-                            if (age < 5)       addTight(90);  // >48 CPS impossible micro-flutter
-                            else if (age < 8)  addTight(40);  // >30 CPS rapid jitter
+                    // 1. Input rhythm & Anti-Burst across all gamemodes:
+                    //    - In Wave & Ship (holdSteered), both 0->1 and 1->0 are active steering transitions.
+                    //      Every toggle pays a compact base cost (+36 Wave, +30 Ship) plus a steep anti-burst
+                    //      penalty for short pulses (<18 ticks) so the bot never does tiny bursts of spam.
+                    //    - In tap-triggered modes (Cube 0, Ball 2, UFO 3, Robot 5, Spider 6, Swing 7),
+                    //      rising edges (0->1) are the clicks: they pay the click cost plus anti-burst
+                    //      penalties for rapid double-clicks, while releases (1->0) are free after a
+                    //      natural human tap duration (3-6 ticks) and lingering holds gently decay so the
+                    //      bot releases the button naturally like a real player.
+                    if (holdSteered) {
+                        if (input != (int)s.action) {
+                            addTight(s.mode == 4 ? 36 : 30);
+                            if (age < 4)       addTight(145); // >60 CPS micro-vibration
+                            else if (age < 8)  addTight(95);  // >30 CPS tiny spam burst
+                            else if (age < 13) addTight(45);  // >18.5 CPS fast flutter
+                            else if (age < 18) addTight(18);  // >13.3 CPS
+                        }
+                    } else {
+                        if (input == 1 && s.action == 0) {
+                            const bool airFlyTap = (s.mode == 3 || s.mode == 7);
+                            addTight(airFlyTap ? 32 : 42);
+                            if (age < 4)       addTight(135); // >60 CPS spam burst
+                            else if (age < 8)  addTight(85);  // >30 CPS double-tap burst
+                            else if (age < 14) addTight(38);  // >17 CPS rapid clicking
+                        } else if (input == 0 && s.action == 1) {
+                            if (age < 3 && !s.dashing) addTight(28);
+                        } else if (input == 1 && s.action == 1) {
+                            const bool activeHold = (kid.s.dashing != 0)
+                                                    || (kid.s.mode == 5 && kid.s.rHover > 0);
+                            if (!activeHold) {
+                                const int maxTapTicks = (kid.s.mode == 0) ? 9 : 5;
+                                if (age >= maxTapTicks && (t & 1) == 0) addTight(1);
+                            }
                         }
                     }
 
-                    // 2. Centerline blend (wide corridor guideline):
-                    //    The middle 65% of the corridor (|off| <= 0.32) is completely FREE for wide, natural diagonals.
-                    //    Only when drifting into the outer margins does a gentle restoring force guide it back toward the
-                    //    safe central channel, preventing bottom-floor or ceiling sticking.
-                    if (isFlying && kid.s.frame == 0) {
+                    // 2. Intended Path & Corridor Centerline (Wave, Mini-Wave, Ship, UFO, Swing):
+                    //    Slope-aware + lookahead corridorOffCentre tracks 45/26.5-deg sloped wave tunnels,
+                    //    sawblade gaps, and straight corridors.
+                    //    - Exempts Wave when intentionally sliding on a D-block (kid.s.mode == 4 && kid.s.grounded).
+                    //    - In narrower tunnels (span < 95px), uses a tighter center channel (|off| > 0.16) so
+                    //      Wave/Mini-Wave cleanly follows the intended diagonal path; in wide-open spaces,
+                    //      gives a wide free deadband (|off| <= 0.28) for relaxed Min-Clicks strokes.
+                    const bool waveDBlockSlide = (kid.s.mode == 4 && kid.s.grounded != 0);
+                    if (isFlying && kid.s.frame == 0 && !waveDBlockSlide) {
+                        const double look = (kid.s.rev ? -1.0 : 1.0) * (kid.s.mini ? 16.0 : 22.0);
+                        double span = 150.0;
                         const double off = corridorOffCentre(near, kx, ky, half,
                                                              (double)kid.s.bandFloor, (double)kid.s.bandCeil,
-                                                             kid.s.mini ? kWaveClampMini : kWaveClamp);
-                        const double ex = std::max(0.0, std::fabs(off) - 0.32);
+                                                             kid.s.mini ? kWaveClampMini : kWaveClamp,
+                                                             look, &span);
+                        const double freeBand = (span < 95.0) ? 0.16 : 0.28;
+                        const double ex = std::max(0.0, std::fabs(off) - freeBand);
                         if (ex > 0.0) {
-                            addTight((int)(24.0 * ex * ex));
+                            const int pen = (int)(1.0 + 5.5 * ex * ex);
+                            addTight(pen);
                         }
                     }
 
-                    // 3. Safety cushion from solid blocks without slide modifier (ceiling, floor, normal walls):
-                    //    Normal blocks kill wave on contact. Gives blocks a comfortable 12-14px buffer.
-                    if (tightHere(near, kx, ky, half, 14.0)) {
-                        if (tightHere(near, kx, ky, half, 6.0))
-                            addTight(30);
-                        else
-                            addTight(12);
+                    // 3. Smooth vertical control in Ship & Swing (avoid violent last-tick dive-bombs):
+                    if ((kid.s.mode == 1 || kid.s.mode == 7) && !kid.s.dashing) {
+                        const double vyAbs = std::fabs((double)kid.s.vy);
+                        if (vyAbs > 6.8 && (t & 1) == 0) addTight(1);
                     }
 
-                    // 4. Safety cushion from lethal hazards (spikes, saws):
-                    //    Always takes the easiest path and gives spikes a generous 24px berth.
-                    if (hazardTightHere(near, kx, ky, half, 24.0)) {
-                        if (hazardTightHere(near, kx, ky, half, 10.0))
-                            addTight(45);
+                    // 4. Safety cushion from solid blocks & solid slopes (without slide modifier in Wave):
+                    //    Scaled for mini mode (mScale = 0.65) so Mini-Wave tunnels are not flooded wall-to-wall.
+                    //    Compact per-tick cost (1..3 pts) so passing a corner never triggers a micro-spam burst!
+                    if (!waveDBlockSlide && humanSolidTightHere(near, kx, ky, half, 13.0 * mScale)) {
+                        if (humanSolidTightHere(near, kx, ky, half, 5.5 * mScale))
+                            addTight(3);
                         else
-                            addTight(16);
+                            addTight(1);
                     }
 
-                    // 5. Cube / Ball / Robot / Spider: decisive early jumps, flips and teleports.
+                    // 5. Safety cushion from lethal hazards (spikes, saws, spiked slopes):
+                    //    Scaled for mini mode; keeps a generous berth (22px full, 14.3px mini) while keeping
+                    //    per-tick cost compact (2..5 pts) so gliding past a spike on 1 stroke (8 ticks * 3 = 24)
+                    //    is ALWAYS cheaper than doing an extra click/flutter (+36..+180)!
+                    if (hazardTightHere(near, kx, ky, half, 22.0 * mScale)) {
+                        if (hazardTightHere(near, kx, ky, half, 9.5 * mScale))
+                            addTight(5);
+                        else
+                            addTight(2);
+                    }
+
+                    // 6. Cube / Ball / Robot / Spider: decisive early jumps, flips, and teleports.
                     //    Checks both lethal hazards AND solid blocking walls ahead. Lookahead scales with speed.
                     if (s.grounded && (s.mode == 0 || s.mode == 2 || s.mode == 5 || s.mode == 6)) {
                         const double sc = std::max(1.0, (double)((s.dx > 0.f) ? s.dx : 1.298f) / 1.298);
                         const double lateD = 28.0 * sc;
-                        const double medD  = ((s.mode == 6) ? 52.0 : (s.mode == 2) ? 50.0 : 44.0) * sc;
-                        const double farD  = ((s.mode == 6) ? 76.0 : (s.mode == 2) ? 72.0 : 66.0) * sc;
+                        const double medD  = ((s.mode == 6) ? 54.0 : (s.mode == 2) ? 52.0 : 45.0) * sc;
+                        const double farD  = ((s.mode == 6) ? 78.0 : (s.mode == 2) ? 74.0 : 66.0) * sc;
                         const bool rv = s.rev != 0;
-                        if (obstacleAhead(near, kx, ky, half, lateD, rv))      addTight(140);
-                        else if (obstacleAhead(near, kx, ky, half, medD, rv))  addTight(55);
-                        else if (obstacleAhead(near, kx, ky, half, farD, rv))  addTight(16);
+                        if (obstacleAhead(near, kx, ky, half, lateD, rv))      addTight(12);
+                        else if (obstacleAhead(near, kx, ky, half, medD, rv))  addTight(5);
+                        else if (obstacleAhead(near, kx, ky, half, farD, rv))  addTight(2);
                     }
 
-                    // 6. No pointless mid-air clicks when no orb is around (Cube, Ball, Robot, Spider).
+                    // 7. No pointless mid-air clicks when no orb is around (Cube, Ball, Robot, Spider).
                     if (!s.grounded && orbsEmpty && (s.mode == 0 || s.mode == 2 || s.mode == 5 || s.mode == 6)
-                        && input != (int)s.action) {
-                        addTight(60);
+                        && input == 1 && s.action == 0) {
+                        addTight(45);
                     }
 
-                    // 7. Orbs: hit them near their center, not on the late exit edge.
+                    // 8. Orbs: hit them near their center, not on the late exit edge.
                     if (kid.s.usedOrb != nullptr && kid.s.usedOrb != s.usedOrb) {
-                        const double orbOff = kx - kid.s.usedOrb->cx;
-                        if (orbOff > 10.0)     addTight(35);
-                        else if (orbOff > 3.0) addTight(12);
+                        const double orbOff = (kid.s.rev ? (kid.s.usedOrb->cx - kx) : (kx - kid.s.usedOrb->cx));
+                        if (orbOff > 10.0)     addTight(18);
+                        else if (orbOff > 3.0) addTight(6);
                     }
                 } else if (g_solveProfile == 4) { // Centerline: true corridor centering for all flying modes + clearance
                     if (isFlying && kid.s.frame == 0) {
@@ -1845,6 +1914,13 @@ inline int searchLayers(E& e, const Rules& rules, SearchResult& out) {
                         accepted = true;
                     } else {
                         KeyRec& r = sm.recs[ri];
+                        auto betterIdx = [&](uint32_t candIdx, uint32_t incIdx) {
+                            if (g_solveProfile == 0) return false;
+                            const State& cs = kids[candIdx].s;
+                            const State& is = kids[incIdx].s;
+                            return cs.tight < is.tight
+                                   || (cs.tight == is.tight && cs.edgeAge > is.edgeAge);
+                        };
                         // the comparisons mirror emit() exactly, including the
                         // float->double promotion of `vy + 1e-9`
                         if ((double)vy > (double)r.hiVy + 1e-9) {
@@ -1866,6 +1942,16 @@ inline int searchLayers(E& e, const Rules& rules, SearchResult& out) {
                             }
                             r.loIdx = i;
                             r.loVy = vy;
+                            accepted = true;
+                        } else if (std::fabs((double)vy - (double)r.hiVy) <= 1e-9
+                                   && betterIdx(i, r.hiIdx)) {
+                            r.hiIdx = i;
+                            if (r.bOrd == kNone) r.loIdx = i;
+                            accepted = true;
+                        } else if (r.bOrd != kNone
+                                   && std::fabs((double)vy - (double)r.loVy) <= 1e-9
+                                   && betterIdx(i, r.loIdx)) {
+                            r.loIdx = i;
                             accepted = true;
                         }
                     }

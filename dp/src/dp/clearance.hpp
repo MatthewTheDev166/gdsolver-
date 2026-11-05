@@ -185,12 +185,25 @@ inline bool tightHere(const std::vector<const Obj*>& near, double px, double py,
     return false;
 }
 
-// Check specifically lethal hazards (spikes type 2, saws type 47, slope hazards) without counting solid blocks
+// Check specifically lethal hazards (spikes type 2, saws type 47, slope hazards) without counting solid blocks.
+// Slope hazards are measured against their actual sloped surface line rather than their full axis-aligned bounding box.
 inline bool hazardTightHere(const std::vector<const Obj*>& near, double px, double py,
                             double half, double eps) {
     for (const Obj* o : near) {
         if (o->type == 2 || o->type == 47 || o->slopeHazard) {
-            if (o->radius > 0.0) {
+            if (o->slope) {
+                const double rx0 = o->cx - o->hw, rx1 = o->cx + o->hw;
+                const double ry0 = o->cy - o->hh, ry1 = o->cy + o->hh;
+                if (px + half + eps <= rx0 || px - half - eps >= rx1) continue;
+                if (py + half + eps <= ry0 || py - half - eps >= ry1) continue;
+                const double u = std::max(0.0, std::min(1.0, (px - rx0) / std::max(1e-6, rx1 - rx0)));
+                const double lineY = o->sy0 + (o->sy1 - o->sy0) * u;
+                if (slopeIsCeiling(o->slopeDir)) {
+                    if (py + half > lineY - eps && py - half < ry1 + eps) return true;
+                } else {
+                    if (py - half < lineY + eps && py + half > ry0 - eps) return true;
+                }
+            } else if (o->radius > 0.0) {
                 const double dx = px - o->cx, dy = py - o->cy;
                 const double r = o->radius + half + eps;
                 if (dx * dx + dy * dy < r * r) return true;
@@ -199,6 +212,36 @@ inline bool hazardTightHere(const std::vector<const Obj*>& near, double px, doub
                 return true;
             }
         }
+    }
+    return false;
+}
+
+// Check proximity to solid walls/floors/ceilings (including solid slopes) for PROFILE_HUMAN.
+inline bool humanSolidTightHere(const std::vector<const Obj*>& near, double px, double py,
+                                double half, double eps) {
+    const double pl = px - half, pr = px + half;
+    const double pb = py - half, pt = py + half;
+    for (const Obj* o : near) {
+        if (o->type != 0 || o->oneway) continue;
+        if (o->slope) {
+            const double rx0 = o->cx - o->hw, rx1 = o->cx + o->hw;
+            const double ry0 = o->cy - o->hh, ry1 = o->cy + o->hh;
+            if (rx1 <= pl || rx0 >= pr) continue;
+            if (pt + eps <= ry0 || pb - eps >= ry1) continue;
+            const double u = std::max(0.0, std::min(1.0, (px - rx0) / std::max(1e-6, rx1 - rx0)));
+            const double lineY = o->sy0 + (o->sy1 - o->sy0) * u;
+            if (slopeIsCeiling(o->slopeDir)) {
+                if (pt > lineY - eps && pb < ry1 + eps) return true;
+            } else {
+                if (pb < lineY + eps && pt > ry0 - eps) return true;
+            }
+            continue;
+        }
+        if (o->cx + o->hw <= pl || o->cx - o->hw >= pr) continue;
+        const double b = o->cy - o->hh, t = o->cy + o->hh;
+        if (t <= pb) { if (pb - t < eps) return true; }
+        else if (b >= pt) { if (b - pt < eps) return true; }
+        else return true;
     }
     return false;
 }
@@ -310,28 +353,75 @@ inline double waveOffCentre(const std::vector<const Obj*>& near, double px, doub
     return off > 1.0 ? 1.0 : off;
 }
 
-// General corridor off-centre: measures corridor bounds between floor/solids/hazards under (px, py)
-// and ceiling/solids/hazards above (px, py), returning 0 at the dead center and 1 at boundaries.
-inline double corridorOffCentre(const std::vector<const Obj*>& near, double px, double py, double half,
-                                double bandFloor, double bandCeil, double seat) {
+// General corridor off-centre: measures corridor bounds between floor/solids/hazards/slopes under (px, py)
+// and ceiling/solids/hazards/slopes above (px, py), returning 0 at the dead center and 1 at boundaries.
+// Includes slopes (45 / 26.5 deg wave tunnels) and circular saws so the solver tracks intended level paths.
+inline double corridorOffCentreAtX(const std::vector<const Obj*>& near, double sx, double py, double half,
+                                   double bandFloor, double bandCeil, double seat, double* outSpan = nullptr) {
     double lo = std::max(bandFloor, 0.0) + seat;
     double hi = bandCeil < 1e8 ? bandCeil - seat : 1e18;
-    const double pl = px - half, pr = px + half;
+    const double pl = sx - half, pr = sx + half;
     for (const Obj* o : near) {
-        if (o->slope || o->oriented || o->oneway) continue;
+        if (o->oneway) continue;
+        if (o->slope) {
+            const double rx0 = o->cx - o->hw, rx1 = o->cx + o->hw;
+            if (rx1 <= pl || rx0 >= pr) continue;
+            const double u = std::max(0.0, std::min(1.0, (sx - rx0) / std::max(1e-6, rx1 - rx0)));
+            const double lineY = o->sy0 + (o->sy1 - o->sy0) * u;
+            const double b = o->cy - o->hh, t = o->cy + o->hh;
+            if (slopeIsCeiling(o->slopeDir)) {
+                if (t <= py) lo = std::max(lo, t + half);
+                else if (lineY >= py - half) hi = std::min(hi, lineY - half);
+            } else {
+                if (b >= py) hi = std::min(hi, b - half);
+                else if (lineY <= py + half) lo = std::max(lo, lineY + half);
+            }
+            continue;
+        }
         if (o->type != 0 && o->type != 2 && o->type != 47) continue;
+        if (o->radius > 0.0) {
+            if (o->cx + o->radius <= pl || o->cx - o->radius >= pr) continue;
+            const double dx = std::max(0.0, std::fabs(sx - o->cx) - half);
+            const double rem = o->radius * o->radius - dx * dx;
+            if (rem <= 0.0) continue;
+            const double ySpan = std::sqrt(rem);
+            const double b = o->cy - ySpan, t = o->cy + ySpan;
+            if (o->cy <= py) {
+                if (t <= py + half) lo = std::max(lo, t + half);
+            } else {
+                if (b >= py - half) hi = std::min(hi, b - half);
+            }
+            continue;
+        }
+        if (o->oriented) continue;
         if (o->cx + o->hw <= pl || o->cx - o->hw >= pr) continue;
         const double b = o->cy - o->hh, t = o->cy + o->hh;
         if (t <= py) lo = std::max(lo, t + half);
         else if (b >= py) hi = std::min(hi, b - half);
     }
     if (hi >= 1e17) {
+        if (outSpan) *outSpan = 150.0;
         const double r = 1.0 - (py - lo) / 150.0;
         return r < 0.0 ? 0.0 : (r > 1.0 ? 1.0 : r);
     }
-    if (hi - lo < 1e-6) return 1.0;
-    const double off = std::fabs(py - 0.5 * (lo + hi)) / (0.5 * (hi - lo));
+    const double span = hi - lo;
+    if (outSpan) *outSpan = span > 0.0 ? span : 0.0;
+    if (span < 1e-6) return 1.0;
+    const double off = std::fabs(py - 0.5 * (lo + hi)) / (0.5 * span);
     return off > 1.0 ? 1.0 : off;
+}
+
+inline double corridorOffCentre(const std::vector<const Obj*>& near, double px, double py, double half,
+                                double bandFloor, double bandCeil, double seat,
+                                double lookAhead = 0.0, double* outSpan = nullptr) {
+    double spanNow = 150.0;
+    const double offNow = corridorOffCentreAtX(near, px, py, half, bandFloor, bandCeil, seat, &spanNow);
+    if (outSpan) *outSpan = spanNow;
+    if (std::fabs(lookAhead) < 1e-6) return offNow;
+    double spanAhead = 150.0;
+    const double offAhead = corridorOffCentreAtX(near, px + lookAhead, py, half, bandFloor, bandCeil, seat, &spanAhead);
+    if (outSpan) *outSpan = std::min(spanNow, spanAhead);
+    return 0.65 * offNow + 0.35 * offAhead;
 }
 
 // Lower is roomier. Ties keep the incumbent, so with the score off (every
