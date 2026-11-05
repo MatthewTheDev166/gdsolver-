@@ -185,6 +185,42 @@ inline bool tightHere(const std::vector<const Obj*>& near, double px, double py,
     return false;
 }
 
+// Check specifically lethal hazards (spikes type 2, saws type 47) without counting solid blocks
+inline bool hazardTightHere(const std::vector<const Obj*>& near, double px, double py,
+                            double half, double eps) {
+    for (const Obj* o : near) {
+        if (o->type == 2 || o->type == 47) {
+            if (o->radius > 0.0) {
+                const double dx = px - o->cx, dy = py - o->cy;
+                const double r = o->radius + half + eps;
+                if (dx * dx + dy * dy < r * r) return true;
+            } else if (std::fabs(px - o->cx) < o->hw + half + eps
+                       && std::fabs(py - o->cy) < o->hh + half + eps) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// Is a lethal hazard directly ahead on the player's path within distAhead px?
+inline bool hazardAhead(const std::vector<const Obj*>& near, double px, double py,
+                        double half, double distAhead) {
+    const double front = px + half;
+    for (const Obj* o : near) {
+        if (o->type == 2 || o->type == 47) {
+            const double oLeft = o->cx - (o->radius > 0.0 ? o->radius : o->hw);
+            const double dx = oLeft - front;
+            if (dx >= -2.0 && dx < distAhead) {
+                const double dy = std::fabs(py - o->cy);
+                const double maxH = (o->radius > 0.0 ? o->radius : o->hh) + half;
+                if (dy < maxH + 12.0) return true;
+            }
+        }
+    }
+    return false;
+}
+
 // --wavetidy: how far a wave at (px, py) sits from the middle of the corridor it is flying, 0 at the middle and 1 at
 // a wall. The corridor is bounded below by the band's floor (+ the seat) and the highest solid top under it, above by
 // the band's ceiling (- the seat) and the lowest solid bottom over it; only solids whose x span the wave's box

@@ -759,8 +759,8 @@ protected:
     // shrinkToFit scales it down to fit.
     static constexpr float kW = 340.f, kH = 300.f;
     static constexpr float kModeY = -82.f, kDescY = -114.f, kCoinY = -146.f, kExportY = -190.f;   // from the top edge
-    static constexpr float kProfileDescY = -170.f;
-    static constexpr float kProfileRow1Y = -194.f, kProfileRow2Y = -222.f;
+    static constexpr float kProfileDescY = -168.f;
+    static constexpr float kProfileRow1Y = -192.f, kProfileRow2Y = -222.f;
     static constexpr float kNoteY = 56.f, kStartY = 28.f;   // from the bottom edge
     static constexpr float kNoteRow = 14.f;   // the level's notes stack up from the bot note
 
@@ -972,12 +972,12 @@ protected:
         m_profileDesc->setID("profile-desc"_spr);
         ui::addChildAtPosition(m_mainLayer, m_profileDesc, Anchor::Top, ccp(0.f, kProfileDescY));
 
-        const float colX[3] = {-98.f, 0.f, 98.f};
+        const float colX[3] = {-102.f, 0.f, 102.f};
         for (int p = 0; p < PROFILE_COUNT; ++p) {
             const float y = (p < 3) ? kProfileRow1Y : kProfileRow2Y;
             const float x = colX[p % 3];
-            m_profileSpr[p] = ButtonSprite::create(uiProfileName(p), 88, true, "goldFont.fnt",
-                                                  "GJ_button_04.png", 22.f, .42f);
+            m_profileSpr[p] = ButtonSprite::create(uiProfileName(p), 76, true, "goldFont.fnt",
+                                                  "GJ_button_04.png", 22.f, .38f);
             m_profileBtn[p] = CCMenuItemSpriteExtra::create(m_profileSpr[p], this,
                                                            menu_selector(Popup::onProfile));
             m_profileBtn[p]->setTag(p);

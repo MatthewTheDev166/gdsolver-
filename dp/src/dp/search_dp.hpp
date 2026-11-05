@@ -1476,17 +1476,34 @@ inline int searchLayers(E& e, const Rules& rules, SearchResult& out) {
                     if ((int)s.action != input) {
                         kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 200);
                     }
+                    if (!s.grounded && orbsEmpty && (s.mode == 0 || s.mode == 2) && input != (int)s.action) {
+                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 100);
+                    }
                 } else if (g_solveProfile == 2) { // Max Clicks: penalize staying in the same input (reward spam)
                     if ((int)s.action == input) {
                         kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 5);
                     }
-                } else if (g_solveProfile == 3) { // Human: generous hazard buffer (18px) + gentle flight centering
-                    if (tightHere(near, (double)kid.s.xAbs, (double)kid.s.y, half, 18.0)) {
-                        if (tightHere(near, (double)kid.s.xAbs, (double)kid.s.y, half, 8.0))
+                } else if (g_solveProfile == 3) { // Human: generous hazard cushion + natural jump anticipation + clean clicks
+                    // 1. Hazard proximity cushion (giving spikes an 18px berth)
+                    if (hazardTightHere(near, (double)kid.s.xAbs, (double)kid.s.y, half, 18.0)) {
+                        if (hazardTightHere(near, (double)kid.s.xAbs, (double)kid.s.y, half, 8.0))
                             kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 15);
                         else
                             kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 4);
                     }
+                    // 2. Natural jump anticipation: penalize waiting on the ground until <26px before a hazard
+                    if (s.grounded && (s.mode == 0 || s.mode == 5) && hazardAhead(near, (double)kid.s.xAbs, (double)kid.s.y, half, 26.0)) {
+                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 30);
+                    }
+                    // 3. No pointless mid-air clicks when airborne and no orbs around
+                    if (!s.grounded && orbsEmpty && (s.mode == 0 || s.mode == 2) && input != (int)s.action) {
+                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 50);
+                    }
+                    // 4. Natural orb click timing (avoid late exit-edge clicks)
+                    if (kid.s.usedOrb != nullptr && kid.s.usedOrb != s.usedOrb && (double)kid.s.xAbs > kid.s.usedOrb->cx + 10.0) {
+                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 20);
+                    }
+                    // 5. Smooth corridor centering in flight modes
                     if (isFlying && kid.s.frame == 0) {
                         const double off = corridorOffCentre(near, (double)kid.s.xAbs, (double)kid.s.y, half,
                                                              (double)kid.s.bandFloor, (double)kid.s.bandCeil,
@@ -1500,13 +1517,13 @@ inline int searchLayers(E& e, const Rules& rules, SearchResult& out) {
                                                              kid.s.mini ? kWaveClampMini : kWaveClamp);
                         kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + (int)(60.0 * off * off));
                     }
-                    if (tightHere(near, (double)kid.s.xAbs, (double)kid.s.y, half, 22.0)) {
+                    if (hazardTightHere(near, (double)kid.s.xAbs, (double)kid.s.y, half, 22.0)) {
                         kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 10);
                     }
-                } else if (g_solveProfile == 5) { // Close-Call: cinematic near-misses (reward 4-14px from hazard, penalize open air)
-                    const bool nearHazard = tightHere(near, (double)kid.s.xAbs, (double)kid.s.y, half, 14.0);
-                    if (!nearHazard) {
-                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 4);
+                } else if (g_solveProfile == 5) { // Close-Call: cinematic near-misses specifically along lethal hazards
+                    const bool nearLethal = hazardTightHere(near, (double)kid.s.xAbs, (double)kid.s.y, half, 14.0);
+                    if (!nearLethal) {
+                        kid.s.tight = (uint16_t)std::min(0xffff, (int)kid.s.tight + 5);
                     }
                 } else {
                     if (tightHere(near, (double)kid.s.xAbs, (double)kid.s.y, half, kTightPx))
