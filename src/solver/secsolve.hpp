@@ -690,6 +690,8 @@ struct Node {
     uint8_t mini;    // player 1 mini? (a family of the cap under cfg secsizefam)
     uint8_t dual;    // in a dual section? (then y2 is player 2's y; see g_p2Key)
     float y2;
+    uint16_t toggles = 0;   // input toggle penalty for PROFILE_HUMAN / PROFILE_MIN_CLICKS
+    uint8_t edgeAge = 255;  // ticks since last input toggle
 };
 inline std::vector<Node> g_nodes;
 // THE CHECKPOINT DOES NOT CARRY EVERY PLAYER MEMBER (cfg `seccpplayer`, on). A load puts back

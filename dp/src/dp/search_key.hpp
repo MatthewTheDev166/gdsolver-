@@ -517,6 +517,16 @@ inline uint64_t modelKeyOf(const State& s, long long t) {
            ^ ((s.dual || s.mode == 1 || s.mode == 3 || s.mode == 4
                || s.mode == 7)
                   ? ((uint64_t)s.held << 1) : 0)
+           ^ ((g_solveProfile == 3
+               && (s.mode == 1 || s.mode == 3 || s.mode == 4 || s.mode == 7))
+                  ? (((s.edgeAge >= (s.mode == 4 ? (s.mini ? 10 : 14) : 10))
+                          ? 0x71E5B9A3D24C8F15ull
+                          : 0ull)
+                     ^ ((s.mode == 1 || s.mode == 3 || s.mode == 7)
+                            ? ((uint64_t)(uint32_t)(int32_t)std::lround(s.vy * 4.0)
+                               * 0x4CF5AD432745937Full)
+                            : 0ull))
+                  : 0ull)
            ^ s.grounded;
     // Which gravity portals this state has spent (State::portalLatch). Unlike
     // `trig` this is not partitioned into the group -- a spent portal moves no

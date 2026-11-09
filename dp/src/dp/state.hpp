@@ -1074,7 +1074,7 @@ struct State {
     // not of the state, and two states that differ only in it answer every
     // future input identically. Keying on it would split every cell by history
     // and multiply the frontier for nothing.
-    uint16_t tight = 0;
+    uint32_t tight = 0;
     // GD's m_jumpBuffered (PlayerObject+0x985), mirrored. Set by pushButton,
     // cleared by releaseButton, by the ball's tap and by a ring that consumes the
     // press -- and NOT set at all while controls are off, because pushButton
@@ -1428,7 +1428,7 @@ struct State {
 // [2026-10-23] 648 -> 656: spdSpill (--spdseenall, the speed portals the four places gave up, a pointer to a persistent list). It accumulates and is not seeded at an anchor, for spdFired's reason.
 // [2026-10-23] 656 -> 664: the merge of --spdseenall (spdSpill, +8) and --balldashsprite (dashAng, a uint16 that sat in padding on its own branch) leaves dashAng without a slot in the padding: one more 8-byte row.
 constexpr size_t kStateBytes =
-    (664u +(size_t)(kTouchBits - 32) * sizeof(uint16_t)
+    (672u +(size_t)(kTouchBits - 32) * sizeof(uint16_t)
           + (sizeof(TouchMask) - sizeof(uint32_t))
           + 2u * (sizeof(GravLatch) - sizeof(Bits<128>)) + 7u) / 8u * 8u;
 static_assert(sizeof(State) == kStateBytes,

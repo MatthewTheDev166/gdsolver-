@@ -608,6 +608,18 @@ class $modify(PlayLayer) {
                     writeResult(b);
                 }
                 std::memset(gs + 0x5bc, 0, 4);
+                // The fixed step's carried-over time (m_extraDelta) is not cleared by resetLevel, so a head
+                // flight inherited the previous attempt's fractional substep: its tick 1->2 moved by up to one
+                // extra step (measured on Bloodbath: t=2 at x=1.2983 in a clean replay, 1.5285 / 1.8018 /
+                // 2.3873 in solve attempts). A plan verified that way dies when replayed from a fresh level
+                // (a spike clipped by 0.02 px at t=4,329). A head flight starts as a fresh level does: 0.
+                static int s_xd = 0;
+                if (s_xd++ < 3) {
+                    char b[160];
+                    snprintf(b, sizeof(b), "headextradelta: m_extraDelta was %.17g, now 0", (double)m_extraDelta);
+                    writeResult(b);
+                }
+                m_extraDelta = 0;
             }
             // cfg resetdump (print only): player 1's whole object as a head reset leaves it, then the layer's
             // GJBaseGameLayer part and the objects resetdumpuids names -- what the next attempt inherits, before

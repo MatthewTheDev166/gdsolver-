@@ -6015,7 +6015,7 @@ inline bool runLadder(long long dt) {
         a.push_back("--start");
         a.push_back(arg);
         // ...and how long the button had been as it is, so the wave's button floor holds across the join.
-        if (g_cfg.wavePulse > 1 && !g_waveRelaxed) {
+        if ((g_cfg.wavePulse > 1 && !g_waveRelaxed) || g_cfg.solveProfile == PROFILE_HUMAN) {
             const int ea = edgeAgeAt(t0);
             if (ea >= 0) { a.push_back("--startedge"); a.push_back(std::to_string(ea)); }
         }

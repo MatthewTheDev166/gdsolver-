@@ -5147,6 +5147,13 @@ class $modify(GJBaseGameLayer) {
                 };
                 std::stable_sort(cur.begin(), cur.end(), [&](int a, int b) { return pc(a) > pc(b); });
             }
+            const bool humanSec = (g_cfg.solveProfile == PROFILE_HUMAN
+                                   || g_cfg.solveProfile == PROFILE_MIN_CLICKS);
+            if (humanSec && cur.size() > 1) {
+                std::stable_sort(cur.begin(), cur.end(), [&](int a, int b) {
+                    return g_nodes[(size_t)a].toggles < g_nodes[(size_t)b].toggles;
+                });
+            }
             for (int ni : cur) {
                 if (foundLeaf >= 0) break;
                 // Hand the frame back BETWEEN EXPANSIONS as well, not only between layers. A
@@ -5166,7 +5173,19 @@ class $modify(GJBaseGameLayer) {
                 } else if ((size_t)ni >= snaps.size() || snaps[(size_t)ni].empty()) {
                     continue;
                 }
-                for (int branch = 0; branch < 2; ++branch) {
+                const int parentIn = (int)g_nodes[(size_t)ni].in;
+                for (int bOrd = 0; bOrd < 2; ++bOrd) {
+                    const int branch = humanSec ? (bOrd == 0 ? parentIn : 1 - parentIn) : bOrd;
+                    const uint8_t childEdgeAge = (branch == parentIn)
+                        ? (uint8_t)std::min(255, (int)g_nodes[(size_t)ni].edgeAge + 1)
+                        : (uint8_t)1;
+                    uint16_t childToggles = g_nodes[(size_t)ni].toggles;
+                    if (branch != parentIn) {
+                        int add = 1;
+                        if (g_cfg.solveProfile == PROFILE_HUMAN && g_nodes[(size_t)ni].edgeAge < 12)
+                            add += (12 - (int)g_nodes[(size_t)ni].edgeAge);
+                        childToggles = (uint16_t)std::min(65535, (int)childToggles + add);
+                    }
                     g_died = false;          // pick up this step's death verdict
                     if (g_snapOn) {
                         const auto snapT0 = std::chrono::steady_clock::now();   // print only
@@ -5459,7 +5478,8 @@ class $modify(GJBaseGameLayer) {
                                            (float)py, (float)pv, (float)px,
                                            (uint16_t)secsolve::cntNow(this),
                                            (uint8_t)(p->m_vehicleSize < 0.9f ? 1 : 0),
-                                           (uint8_t)(secDualP2() ? 1 : 0), secDualY2()});
+                                           (uint8_t)(secDualP2() ? 1 : 0), secDualY2(),
+                                           childToggles, childEdgeAge});
                         g_dash.emplace_back();
                         secCaptureDash(g_dash.back());
                         g_vy.push_back(p ? p->m_yVelocity : 0.0);
@@ -5559,7 +5579,8 @@ class $modify(GJBaseGameLayer) {
                                            (float)py, (float)pv, (float)px,
                                            (uint16_t)cntHere,
                                            (uint8_t)(p->m_vehicleSize < 0.9f ? 1 : 0),
-                                           (uint8_t)(secDualP2() ? 1 : 0), secDualY2()});
+                                           (uint8_t)(secDualP2() ? 1 : 0), secDualY2(),
+                                           childToggles, childEdgeAge});
                         g_dash.emplace_back();
                         secCaptureDash(g_dash.back());
                         g_vy.push_back(p ? p->m_yVelocity : 0.0);
@@ -5599,7 +5620,8 @@ class $modify(GJBaseGameLayer) {
                                            (float)py, (float)pv, (float)px,
                                            (uint16_t)cntHere,
                                            (uint8_t)(p->m_vehicleSize < 0.9f ? 1 : 0),
-                                           (uint8_t)(secDualP2() ? 1 : 0), secDualY2()});
+                                           (uint8_t)(secDualP2() ? 1 : 0), secDualY2(),
+                                           childToggles, childEdgeAge});
                         g_dash.emplace_back();
                         secCaptureDash(g_dash.back());
                         g_vy.push_back(p ? p->m_yVelocity : 0.0);
@@ -5721,10 +5743,22 @@ class $modify(GJBaseGameLayer) {
                 out.reserve(q);
                 out.push_back(v.front()); in.insert(v.front());
                 out.push_back(v.back()); in.insert(v.back());
-                for (int ni : v) {
-                    if (out.size() >= q) break;
-                    if (!cells.insert(cellOf(ni, lo)).second) continue;
-                    if (in.insert(ni).second) out.push_back(ni);
+                if (humanSec) {
+                    std::vector<int> byTog(v);
+                    std::stable_sort(byTog.begin(), byTog.end(), [&](int a, int b) {
+                        return g_nodes[(size_t)a].toggles < g_nodes[(size_t)b].toggles;
+                    });
+                    for (int ni : byTog) {
+                        if (out.size() >= q) break;
+                        if (!cells.insert(cellOf(ni, lo)).second) continue;
+                        if (in.insert(ni).second) out.push_back(ni);
+                    }
+                } else {
+                    for (int ni : v) {
+                        if (out.size() >= q) break;
+                        if (!cells.insert(cellOf(ni, lo)).second) continue;
+                        if (in.insert(ni).second) out.push_back(ni);
+                    }
                 }
                 if (out.size() < q) {
                     std::vector<int> rest;

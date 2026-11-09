@@ -114,12 +114,6 @@
 			"default": 1,
 			"min": -10,
 			"max": 10
-		},
-		"export-path": {
-			"type": "string",
-			"name": "Macro Export Folder",
-			"description": "Folder where exported .gdr2 macros are saved.",
-			"default": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Geometry Dash\\replays"
 		}
 	}
 }

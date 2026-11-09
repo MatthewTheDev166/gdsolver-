@@ -22,6 +22,7 @@
 #endif
 #include "mod/ui_popup.hpp"   // the layout helpers, and on 2.209 the popup base and the scroll window: see that file
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <string_view>
@@ -422,7 +423,20 @@ protected:
     cocos2d::CCLabelBMFont* m_menuNote = nullptr;
     cocos2d::CCLabelBMFont* m_glitchValue = nullptr;
     cocos2d::CCLabelBMFont* m_searchValue = nullptr;
-    geode::TextInput* m_exportInput = nullptr;
+    cocos2d::CCLabelBMFont* m_exportPathLabel = nullptr;
+
+    static std::string getExportFolderPath() {
+        const std::string defPath = (geode::dirs::getGameDir() / "replays").string();
+        std::string p = Mod::get()->getSavedValue<std::string>("export-path", defPath);
+        if (p.empty()) {
+            p = defPath;
+        }
+        return p;
+    }
+
+    static void setExportFolderPath(const std::string& p) {
+        Mod::get()->setSavedValue<std::string>("export-path", p);
+    }
 
     // Top to bottom: the title; the Section search row; Avoid glitches (title, value between arrows); Search (the same); the Hold Play row and,
     // when it is checked, its note; OK. 284 high, inside GD's design height (320; the popup's close button rises above its frame).
@@ -507,22 +521,19 @@ protected:
         auto* exportLabel = CCLabelBMFont::create("Macro Export Folder", "goldFont.fnt");
         exportLabel->setScale(.55f);
         exportLabel->setID("export-folder-label"_spr);
-        ui::addChildAtPosition(m_mainLayer, exportLabel, Anchor::Top, ccp(0, -122.f));
+        ui::addChildAtPosition(m_mainLayer, exportLabel, Anchor::Top, ccp(0, -120.f));
 
-        m_exportInput = geode::TextInput::create(190.f, "Path", "chatFont.fnt");
-        m_exportInput->setID("export-path-input"_spr);
-        m_exportInput->setCommonFilter(geode::CommonFilter::Any);
-        const std::string curPath = Mod::get()->getSettingValue<std::string>("export-path");
-        m_exportInput->setString(curPath, false);
-        m_exportInput->setCallback([](std::string const& str) {
-            Mod::get()->setSettingValue<std::string>("export-path", str);
-        });
-        ui::addChildAtPosition(m_mainLayer, m_exportInput, Anchor::Top, ccp(-32.f, -154.f));
+        const std::string curPath = getExportFolderPath();
+        m_exportPathLabel = CCLabelBMFont::create(curPath.c_str(), "chatFont.fnt");
+        m_exportPathLabel->setID("export-path-label"_spr);
+        m_exportPathLabel->setColor({210, 230, 255});
+        ui::limitNodeWidth(m_exportPathLabel, 195.f, .52f, .25f);
+        ui::addChildAtPosition(m_mainLayer, m_exportPathLabel, Anchor::Top, ccp(-32.f, -150.f));
 
         auto* browseSpr = ButtonSprite::create("Browse", 52, true, "goldFont.fnt", "GJ_button_04.png", 26.f, .55f);
         auto* browseBtn = CCMenuItemSpriteExtra::create(browseSpr, this, menu_selector(Options::onBrowse));
         browseBtn->setID("export-browse-button"_spr);
-        ui::addChildAtPosition(m_buttonMenu, browseBtn, Anchor::Top, ccp(98.f, -154.f));
+        ui::addChildAtPosition(m_buttonMenu, browseBtn, Anchor::Top, ccp(98.f, -150.f));
 
         auto* okSpr = ButtonSprite::create("OK", "goldFont.fnt", "GJ_button_01.png", .8f);
         auto* ok = CCMenuItemSpriteExtra::create(okSpr, this, menu_selector(Options::onOk));
@@ -534,32 +545,50 @@ protected:
 
     void onBrowse(CCObject*) {
 #ifdef GEODE_IS_WINDOWS
+        static bool s_browseBusy = false;
+        static std::chrono::steady_clock::time_point s_lastClose{};
+        const auto now = std::chrono::steady_clock::now();
+        if (s_browseBusy || (now - s_lastClose) < std::chrono::milliseconds(500)) {
+            return;
+        }
+        s_browseBusy = true;
+
+        HWND hwndOwner = GetActiveWindow();
+        if (!hwndOwner) hwndOwner = GetForegroundWindow();
+
         const HRESULT hrCo = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
         IFileOpenDialog* pFileOpen = nullptr;
-        if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_ALL, IID_IFileOpenDialog, reinterpret_cast<void**>(&pFileOpen)))) {
+        if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pFileOpen)))) {
             DWORD dwOptions = 0;
             if (SUCCEEDED(pFileOpen->GetOptions(&dwOptions))) {
-                pFileOpen->SetOptions(dwOptions | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
+                pFileOpen->SetOptions(dwOptions | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST);
             }
-            std::string current = Mod::get()->getSettingValue<std::string>("export-path");
+            pFileOpen->SetTitle(L"Select Macro Export Folder");
+            std::string current = getExportFolderPath();
             if (!current.empty()) {
                 IShellItem* pDefaultFolder = nullptr;
-                std::wstring wCurrent(current.begin(), current.end());
+                std::filesystem::path curFsPath(current);
+                std::error_code ec;
+                if (!std::filesystem::exists(curFsPath, ec) && curFsPath.has_parent_path()) {
+                    curFsPath = curFsPath.parent_path();
+                }
+                std::wstring wCurrent = curFsPath.wstring();
                 if (SUCCEEDED(SHCreateItemFromParsingName(wCurrent.c_str(), nullptr, IID_PPV_ARGS(&pDefaultFolder)))) {
                     pFileOpen->SetFolder(pDefaultFolder);
                     pDefaultFolder->Release();
                 }
             }
-            if (SUCCEEDED(pFileOpen->Show(nullptr))) {
+            if (SUCCEEDED(pFileOpen->Show(hwndOwner))) {
                 IShellItem* pItem = nullptr;
                 if (SUCCEEDED(pFileOpen->GetResult(&pItem))) {
                     PWSTR pszFilePath = nullptr;
                     if (SUCCEEDED(pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath))) {
                         std::filesystem::path picked(pszFilePath);
                         std::string pickedStr = picked.string();
-                        Mod::get()->setSettingValue<std::string>("export-path", pickedStr);
-                        if (m_exportInput) {
-                            m_exportInput->setString(pickedStr, false);
+                        setExportFolderPath(pickedStr);
+                        if (m_exportPathLabel) {
+                            m_exportPathLabel->setString(pickedStr.c_str());
+                            ui::limitNodeWidth(m_exportPathLabel, 195.f, .52f, .25f);
                         }
                         CoTaskMemFree(pszFilePath);
                     }
@@ -571,6 +600,8 @@ protected:
         if (SUCCEEDED(hrCo)) {
             CoUninitialize();
         }
+        s_lastClose = std::chrono::steady_clock::now();
+        s_browseBusy = false;
 #endif
     }
 
@@ -654,9 +685,6 @@ protected:
     }
 
     void onOk(CCObject*) {
-        if (m_exportInput) {
-            Mod::get()->setSettingValue<std::string>("export-path", m_exportInput->getString());
-        }
         this->onClose(nullptr);
     }
 
@@ -757,10 +785,10 @@ protected:
     // 2026-10-01), and the setting itself from mod.json (2026-10-16): cfg dpplainbeside=3 is its only way in.
     // Even so the popup can be taller than the screen -- GD's design height is 320 -- so
     // shrinkToFit scales it down to fit.
-    static constexpr float kW = 340.f, kH = 300.f;
-    static constexpr float kModeY = -82.f, kDescY = -114.f, kCoinY = -146.f, kExportY = -190.f;   // from the top edge
-    static constexpr float kProfileDescY = -168.f;
-    static constexpr float kProfileRow1Y = -192.f, kProfileRow2Y = -222.f;
+    static constexpr float kW = 340.f, kH = 308.f;
+    static constexpr float kModeY = -82.f, kDescY = -121.f, kCoinY = -153.f, kExportY = -196.f;   // from the top edge
+    static constexpr float kProfileDescY = -175.f;
+    static constexpr float kProfileRow1Y = -199.f, kProfileRow2Y = -229.f;
     static constexpr float kNoteY = 56.f, kStartY = 28.f;   // from the bottom edge
     static constexpr float kNoteRow = 14.f;   // the level's notes stack up from the bot note
 
@@ -1162,9 +1190,10 @@ protected:
             return;
         }
 
-        std::string exportFolder = Mod::get()->getSettingValue<std::string>("export-path");
+        const std::string defFolder = (geode::dirs::getGameDir() / "replays").string();
+        std::string exportFolder = Mod::get()->getSavedValue<std::string>("export-path", defFolder);
         if (exportFolder.empty()) {
-            exportFolder = "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Geometry Dash\\replays";
+            exportFolder = defFolder;
         }
 
         std::string outFilename;
