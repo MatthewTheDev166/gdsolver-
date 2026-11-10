@@ -82,16 +82,57 @@ inline const char* const kKeySettings[(size_t)Key::Count] = {
 inline bool hotkeysFocused();
 
 inline bool keyHeld(Key k) {
-    if (g_keyDown[(size_t)k]) return true;
+    if (!g_keyDown[(size_t)k]) {
 #ifdef GEODE_IS_WINDOWS
-    if (k == Key::ReplayPanel && hotkeysFocused()) {
+        if (k == Key::ReplayPanel && hotkeysFocused()) {
+            auto binds = Mod::get()->getSettingValue<std::vector<Keybind>>(kKeySettings[(size_t)k]);
+            if (!binds.empty() && binds.front().key == cocos2d::enumKeyCodes::KEY_RightShift) {
+                return (GetAsyncKeyState(VK_RSHIFT) & 0x8000) != 0;
+            }
+        }
+#endif
+        return false;
+    }
+#ifdef GEODE_IS_WINDOWS
+    if (hotkeysFocused()) {
         auto binds = Mod::get()->getSettingValue<std::vector<Keybind>>(kKeySettings[(size_t)k]);
-        if (!binds.empty() && binds.front().key == cocos2d::enumKeyCodes::KEY_RightShift) {
-            return (GetAsyncKeyState(VK_RSHIFT) & 0x8000) != 0;
+        if (!binds.empty()) {
+            int vk = (int)binds.front().key;
+            if (vk > 0 && vk < 256) {
+                const bool physical = (GetAsyncKeyState(vk) & 0x8000) != 0;
+                if (!physical) {
+                    g_keyDown[(size_t)k] = false;
+                    return false;
+                }
+            }
         }
     }
 #endif
-    return false;
+    return true;
+}
+
+// Hotkey states maintained across frames and cleared between sessions or when showing a solution.
+inline bool s_rightDown = false, s_leftDown = false;
+inline int s_rightRep = 0, s_leftRep = 0;
+inline std::chrono::steady_clock::time_point s_rSince, s_rLast, s_lSince, s_lLast;
+inline bool s_upDown = false, s_downDown = false;
+inline bool s_f1Down = false, s_f2Down = false, s_f3Down = false, s_f4Down = false;
+inline std::chrono::steady_clock::time_point s_f3Since, s_f3Last, s_f4Since, s_f4Last;
+inline bool s_f5Down = false, s_f6Down = false, s_f7Down = false, s_f9Down = false, s_f10Down = false;
+inline bool s_panelDown = false, s_tkDown = false;
+
+inline void resetTransportHotkeys() {
+    s_rightDown = s_leftDown = false;
+    s_rightRep = s_leftRep = 0;
+    s_rSince = s_rLast = s_lSince = s_lLast = {};
+    s_upDown = s_downDown = false;
+    s_f1Down = s_f2Down = s_f3Down = s_f4Down = false;
+    s_f3Since = s_f3Last = s_f4Since = s_f4Last = {};
+    s_f5Down = s_f6Down = s_f7Down = s_f9Down = s_f10Down = false;
+    s_panelDown = s_tkDown = false;
+    for (size_t i = 0; i < (size_t)Key::Count; ++i) {
+        g_keyDown[i] = false;
+    }
 }
 
 // Whether the keyboard belongs to this game right now: the foreground window is one of our process's.
@@ -200,7 +241,6 @@ inline void pollProbeHotkeys() {
     // where the search runs nearly all the time and the key could not bring them back (user report,
     // 2026-10-13). A solve now starts with them shown (uiConfigureSession), and the key can always
     // turn them on.
-    static bool s_f1Down = false;
     bool f1 = keyHeld(Key::Overlay);
     if (f1 && !s_f1Down) {
         if (solvingNow() && !g_overlayHidden) {
@@ -212,7 +252,6 @@ inline void pollProbeHotkeys() {
     }
     s_f1Down = f1;
     // F2: pause/resume (for manual experiments; also works outside a session)
-    static bool s_f2Down = false;
     bool f2 = keyHeld(Key::Pause);
     if (f2 && !s_f2Down) {
         if (replaypanel::owns()) replaypanel::keyPause();     // the screen is dark and the panel is playing: the panel's
@@ -244,13 +283,10 @@ inline void pollProbeHotkeys() {
         }
         down = now;
     };
-    static bool s_f3Down = false, s_f4Down = false;
-    static std::chrono::steady_clock::time_point s_f3Since, s_f3Last, s_f4Since, s_f4Last;
     stepKey(Key::Step1, 3, s_f3Down, s_f3Since, s_f3Last);
     stepKey(Key::Step10, 4, s_f4Down, s_f4Since, s_f4Last);
     // F6: GD's own hitbox drawing (see toggleHitboxes). The game only shows it in practice
     // mode, so the flag and the node's visibility are driven here instead
-    static bool s_f6Down = false;
     bool f6 = keyHeld(Key::Hitboxes);
     if (f6 && !s_f6Down) g_probeRequest = 6;
     s_f6Down = f6;
@@ -261,7 +297,6 @@ inline void pollProbeHotkeys() {
     //
     // The level is taken from the session when there is one and from the game otherwise, so the
     // key also works while watching a level in plain manual play.
-    static bool s_f10Down = false;
     // cfg `f10auto` (a test hook): the press the check cannot send. Counted from the first poll of the showing -- a replay's
     // start, or the solve's clear -- and held for one poll, so it goes through the same edge test as the key.
     static bool s_f10Synth = false, s_f10Armed = false;
@@ -292,7 +327,6 @@ inline void pollProbeHotkeys() {
     s_f10Down = f10;
     // The replay panel (replay_panel.hpp): GD's record of the deepest verified attempt, in the free corner. Like the
     // iteration map it only reads what the solver has kept, so it is not refused while solving.
-    static bool s_panelDown = false;
     const bool panelKey = keyHeld(Key::ReplayPanel);
     if (panelKey && !s_panelDown) {
         replaypanel::toggle();     // full -> recent -> off -> full (it says which in result.txt)
@@ -411,7 +445,6 @@ inline void pollHotkeys() {
     // The whole SESSION, not only while the search runs: a solve alternates searching with
     // replaying its candidates, and it comes back to 1x for each replay. If the key only worked
     // while searching, the run could be slowed down but never sped up again.
-    static bool s_f5Down = false, s_f9Down = false;
     bool f5 = keyHeld(Key::Render);
     if (f5 && !s_f5Down && solveSession()) renderTogglePress();
     s_f5Down = f5;
@@ -423,7 +456,6 @@ inline void pollHotkeys() {
     // counting again from wherever the plan had got to.
     // The human takeover's end (mod/takeover.hpp). Only in a session that armed it; elsewhere
     // the key is nobody's.
-    static bool s_tkDown = false;
     const bool tk = keyHeld(Key::TakeoverEnd);
     // In a session armed by the key alone (cfg takeoverkey) the first press is the takeover itself.
     if (tk && !s_tkDown && takeover::armed()) takeover::keyPressed();
@@ -454,7 +486,6 @@ inline void pollHotkeys() {
     // moment the replay finishes was the one key that had stopped working. Reviving is for
     // replays only -- in serve mode the session belongs to the driver, and resurrecting it
     // behind the driver's back would hand it a run it never asked for.
-    static bool s_f7Down = false;
     bool f7 = keyHeld(Key::Replay);
     // In a session armed by the key alone (cfg takeoverkey) a person who has the input can give it
     // up with this key: the mode is left and the replay restarts below, whole, ready for the
@@ -472,6 +503,8 @@ inline void pollHotkeys() {
             g_pauseAtXFired = false;   // stop short of the wall again on the next lap
             g_paused = false;          // release it so it does not start out stuck paused
             clearManualPause();        // ...and F2's, so the replay does not start frozen
+            itermap::endSeek("replay_key");
+            resetTransportHotkeys();
             // GD leaves its end-of-level screen parented across resetLevel, so replaying a level
             // you have cleared stacks another one on every clear (see dismissEndScreen).
             itermap::dismissEndScreen();
@@ -491,7 +524,6 @@ inline void pollHotkeys() {
     // function only runs while the mod is DRIVING, where the plan owns the input and a keypress
     // cannot jump. (pollProbeHotkeys, the one that also works in plain manual play, binds
     // neither.)
-    static bool s_upDown = false, s_downDown = false;
     const bool kUp   = keyHeld(Key::Faster);
     const bool kDown = keyHeld(Key::Slower);
     int step = 0;
@@ -547,7 +579,12 @@ inline void pollHotkeys() {
             replaypanel::keySeek(dir * itermap::seekStep(press ? 0 : ++repeats));
             return;
         }
-        if (showingSolve() || takeover::ownsLevel()) return;
+        if (showingSolve() || takeover::ownsLevel()) {
+            repeats = 0;
+            since = t;
+            last = t;
+            return;
+        }
         if (press) { repeats = 0; since = t; }
         last = t;
         if (stopped) {
@@ -567,9 +604,6 @@ inline void pollHotkeys() {
         if (dir < 0 && itermap::g_seekRestart) return;
         itermap::seekBy(dir * itermap::seekStep(press ? 0 : ++repeats));
     };
-    static bool s_rightDown = false, s_leftDown = false;
-    static int s_rightRep = 0, s_leftRep = 0;
-    static std::chrono::steady_clock::time_point s_rSince, s_rLast, s_lSince, s_lLast;
     transportKey(Key::SeekForward, +1, s_rightDown, s_rightRep, s_rSince, s_rLast);
     transportKey(Key::SeekBack,  -1, s_leftDown,  s_leftRep,  s_lSince, s_lLast);
 }

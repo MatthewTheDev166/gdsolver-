@@ -10134,6 +10134,8 @@ inline void poll() {
         g_showRequest = false;
         g_paused = false;
         clearManualPause();          // do not start the showing frozen on someone's F2
+        itermap::endSeek("showing_solution");
+        resetTransportHotkeys();
         watchSpeedSet(WATCH_SPEED_1X);
         g_hudPhase = "replaying the solution";
         g_cfg.maxAttempts = g_finishedAttempts + 1;   // show it once, then the session ends

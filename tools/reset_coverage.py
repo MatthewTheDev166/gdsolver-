@@ -1176,7 +1176,7 @@ RATCHET = """
   g_horizon g_horizonFull g_horizonNow g_hot
   g_hotGen g_hotMax g_hudOn g_injecting
   g_injectNext g_injects g_iter g_jumpBuf
-  g_keepSnapPos g_keyDown g_killId g_killLog
+  g_keepSnapPos g_killId g_killLog
   g_killOverride g_killTick g_killUid g_killVetoIter
   g_killY g_labelH g_labelW g_lagAtTick
   g_lagFired g_lagMs g_lastDeath g_lastDeathX

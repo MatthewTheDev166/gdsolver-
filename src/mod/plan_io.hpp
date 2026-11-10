@@ -159,6 +159,8 @@ inline void resetSessionState() {
     // draw the PREVIOUS level's rounds over this one -- the same family of bug as the grouptrace
     // and HUD leaks above, and just as convincing to look at.
     itermap::clear();
+    itermap::endSeek("reset_session");
+    resetTransportHotkeys();
     levelslice::reset();
     // ...and the human takeover: its checkpoint belongs to this level's layer, and a mode left
     // live would lift the next session's input block.
