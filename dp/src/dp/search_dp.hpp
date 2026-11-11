@@ -1693,6 +1693,22 @@ inline int searchLayers(E& e, const Rules& rules, SearchResult& out) {
                             addTight(2);
                     }
 
+                    // 5b. Safety cushion when jumping/flying over unactivated jump pads:
+                    //     Discourages shaving sub-pixels against the pad's trigger threshold, ensuring
+                    //     jump arcs and flight paths maintain a safe, clean clearance above pads.
+                    if (kid.s.grounded == 0 && padTightHere(pads, kx, ky, half, speedScale * mScale, kid.s.flip != 0, kid.s.usedPad)) {
+                        addTight(3);
+                    }
+                    if (kid.s.dual != 0 && kid.s.grounded2 == 0) {
+                        const double kx2 = (double)kid.s.xAbs + (double)kid.s.dx2;
+                        const double ky2 = (double)kid.s.y2;
+                        const double half2 = playerHalf(kid.s.mode2, kid.s.mini2 != 0);
+                        const double mScale2 = kid.s.mini2 ? 0.65 : 1.0;
+                        if (padTightHere(pads, kx2, ky2, half2, speedScale * mScale2, kid.s.flip2 != 0, kid.s.usedPad2)) {
+                            addTight(3);
+                        }
+                    }
+
                     // 6. Cube / Ball / Robot / Spider: decisive jumps, flips, and centered teleports.
                     if (s.grounded && (s.mode == 0 || s.mode == 2 || s.mode == 5 || s.mode == 6)) {
                         const double sc = std::max(1.0, (double)((s.dx > 0.f) ? s.dx : 1.298f) / 1.298);
@@ -1713,7 +1729,7 @@ inline int searchLayers(E& e, const Rules& rules, SearchResult& out) {
                                                            : (input == 1);
                             if (initiatedJump && kid.s.usedOrb == nullptr) {
                                 const int jumpPen = groundJumpTimingPenalty(
-                                    near, slps, (double)s.xAbs, (double)s.y, half, sc, rv, s.flip != 0);
+                                    near, slps, pads, (double)s.xAbs, (double)s.y, half, sc, rv, s.flip != 0);
                                 if (jumpPen > 0) addTight(jumpPen);
                             }
                         }
@@ -1734,7 +1750,7 @@ inline int searchLayers(E& e, const Rules& rules, SearchResult& out) {
                         } else if (kid.s.mode == 0 || kid.s.mode == 2 || kid.s.mode == 5) {
                             const double sc = std::max(1.0, (double)((s.dx > 0.f) ? s.dx : 1.298f) / 1.298);
                             const int jumpPen = groundJumpTimingPenalty(
-                                near, slps, kx, ky, half, sc, kid.s.rev != 0, kid.s.flip != 0);
+                                near, slps, pads, kx, ky, half, sc, kid.s.rev != 0, kid.s.flip != 0);
                             if (jumpPen > 0) addTight(jumpPen);
                         }
                     }

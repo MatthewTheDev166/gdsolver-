@@ -468,20 +468,97 @@ inline double distanceToObstacleAhead(const std::vector<const Obj*>& near,
     return bestDist;
 }
 
+// Horizontal distance from player's leading face to the nearest jump pad ahead on the ground.
+inline double distanceToPadAhead(const std::vector<const Obj*>& pads,
+                                 double px, double py, double half,
+                                 double maxLookahead, bool rev = false, bool flip = false) {
+    (void)flip;
+    double bestDist = 1e9;
+    if (!rev) {
+        const double front = px + half;
+        for (const Obj* o : pads) {
+            const double hw = (o->radius > 0.0 ? o->radius : o->hw);
+            const double hh = (o->radius > 0.0 ? o->radius : o->hh);
+            const double oLeft = o->cx - hw;
+            const double dx = oLeft - front;
+            if (dx >= -2.0 && dx < maxLookahead) {
+                const double dy = std::fabs(py - o->cy);
+                if (dy < hh + half + 14.0) bestDist = std::min(bestDist, std::max(0.0, dx));
+            }
+        }
+    } else {
+        const double front = px - half;
+        for (const Obj* o : pads) {
+            const double hw = (o->radius > 0.0 ? o->radius : o->hw);
+            const double hh = (o->radius > 0.0 ? o->radius : o->hh);
+            const double oRight = o->cx + hw;
+            const double dx = front - oRight;
+            if (dx >= -2.0 && dx < maxLookahead) {
+                const double dy = std::fabs(py - o->cy);
+                if (dy < hh + half + 14.0) bestDist = std::min(bestDist, std::max(0.0, dx));
+            }
+        }
+    }
+    return bestDist;
+}
+
+// Returns true if the player at (px, py) is directly over/under an unactivated pad
+// and within a dangerous proximity cushion of the pad's trigger threshold.
+inline bool padTightHere(const std::vector<const Obj*>& pads,
+                         double px, double py, double half, double scale,
+                         bool flip, const Obj* const* usedPads) {
+    for (const Obj* pd : pads) {
+        if (!pd) continue;
+        if (usedPads) {
+            bool wasUsed = false;
+            for (int k = 0; k < 4; ++k) {
+                if (usedPads[k] == pd) { wasUsed = true; break; }
+            }
+            if (wasUsed) continue;
+        }
+
+        const double hw = (pd->radius > 0.0 ? pd->radius : pd->hw);
+        const double hh = (pd->radius > 0.0 ? pd->radius : pd->hh);
+
+        // Check horizontal overlap with the pad's trigger area plus lookahead
+        if (std::fabs(px - pd->cx) > hw + half + 2.0 * scale) continue;
+
+        if (!flip) {
+            // Normal gravity: pad on floor, trigger threshold is pd->cy + hh + half
+            const double triggerCeil = pd->cy + hh + half;
+            // Dangerous skim zone: within 16px above the trigger line
+            if (py >= triggerCeil - 0.5 && py < triggerCeil + 16.0 * scale) {
+                return true;
+            }
+        } else {
+            // Flipped gravity: pad on ceiling, trigger threshold is pd->cy - hh - half
+            const double triggerFloor = pd->cy - hh - half;
+            // Dangerous skim zone: within 16px below the trigger line
+            if (py <= triggerFloor + 0.5 && py > triggerFloor - 16.0 * scale) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 // Compute centering & jump timing penalty for ground-initiated jumps/flips (Cube 0, Ball 2, Robot 5)
 // in PROFILE_HUMAN (`g_solveProfile == 3`).
 // - Evaluates:
 //   1. Platform entrance edge: prevents robotic frame-perfect buffer-jumps off the entry edge of platforms.
 //   2. Obstacle / Drop-off distance: penalizes jumping too early (> 42 px ahead) or pixel-scraping (< 8 px ahead).
-//   3. Deterministic safe human variation: gently centers jumps around ~28 px with +-4 px natural variation.
+//   3. Jump pads on ground: enforces safe early takeoff (~34 px ahead) preventing late takeoffs that graze pads.
+//   4. Deterministic safe human variation: gently centers jumps with natural variation.
 inline int groundJumpTimingPenalty(const std::vector<const Obj*>& near,
                                    const std::vector<const Obj*>& slps,
+                                   const std::vector<const Obj*>& pads,
                                    double px, double py, double half, double sc,
                                    bool rev, bool flip) {
     int pen = 0;
     const double maxLookahead = 110.0 * sc;
     const double frontX = (!rev) ? (px + half) : (px - half);
     const double distToObs = distanceToObstacleAhead(near, slps, px, py, half, maxLookahead, rev);
+    const double distToPad = distanceToPadAhead(pads, px, py, half, maxLookahead, rev, flip);
 
     // Identify supporting platform (if standing on a solid object rather than world floor)
     const Obj* plat = nullptr;
@@ -553,22 +630,41 @@ inline int groundJumpTimingPenalty(const std::vector<const Obj*>& near,
     }
 
     // 2. Obstacle / Drop-off Distance & Safe Human Centering Variation
-    const double effectiveDistAhead = std::min(distToObs, distToDrop);
-    if (effectiveDistAhead < 100.0 * sc) {
-        // Deterministic pseudo-random variation centered around 28 px (+-4 px)
+    if (distToPad < distToObs && distToPad < 100.0 * sc) {
+        // Jumping over a jump pad on the ground:
+        // Must initiate early enough (~30-38 px ahead) so the jump arc gains altitude before reaching the pad.
+        // A jump initiated < 22 px ahead risks the player's bottom intersecting the pad's trigger box on takeoff.
         const uint32_t hash = ((uint32_t)std::floor(std::fabs(px) * 0.1) * 2654435761u);
-        const double hashOffset = (double)(hash % 9) - 4.0; // [-4.0, +4.0] px
-        const double humanCenter = (28.0 + hashOffset) * sc;
+        const double hashOffset = (double)(hash % 7) - 3.0; // [-3.0, +3.0] px
+        const double padCenter = (34.0 + hashOffset) * sc;
 
-        if (effectiveDistAhead > 42.0 * sc) {
-            const double excess = effectiveDistAhead - 42.0 * sc;
-            pen += (int)std::lround(excess * 1.8);
-        } else if (effectiveDistAhead < 8.0 * sc) {
-            const double deficit = 8.0 * sc - effectiveDistAhead;
-            pen += (int)std::lround(deficit * 1.6);
+        if (distToPad < 22.0 * sc) {
+            const double deficit = 22.0 * sc - distToPad;
+            pen += (int)std::lround(deficit * 2.8) + 18;
+        } else if (distToPad > 48.0 * sc) {
+            const double excess = distToPad - 48.0 * sc;
+            pen += (int)std::lround(excess * 1.5);
         }
-        const double diff = std::fabs(effectiveDistAhead - humanCenter);
-        pen += (int)std::lround(diff * diff * 0.025);
+        const double diff = std::fabs(distToPad - padCenter);
+        pen += (int)std::lround(diff * diff * 0.03);
+    } else {
+        const double effectiveDistAhead = std::min(distToObs, distToDrop);
+        if (effectiveDistAhead < 100.0 * sc) {
+            // Deterministic pseudo-random variation centered around 28 px (+-4 px)
+            const uint32_t hash = ((uint32_t)std::floor(std::fabs(px) * 0.1) * 2654435761u);
+            const double hashOffset = (double)(hash % 9) - 4.0; // [-4.0, +4.0] px
+            const double humanCenter = (28.0 + hashOffset) * sc;
+
+            if (effectiveDistAhead > 42.0 * sc) {
+                const double excess = effectiveDistAhead - 42.0 * sc;
+                pen += (int)std::lround(excess * 1.8);
+            } else if (effectiveDistAhead < 8.0 * sc) {
+                const double deficit = 8.0 * sc - effectiveDistAhead;
+                pen += (int)std::lround(deficit * 1.6);
+            }
+            const double diff = std::fabs(effectiveDistAhead - humanCenter);
+            pen += (int)std::lround(diff * diff * 0.025);
+        }
     }
 
     return pen;
