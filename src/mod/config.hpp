@@ -1419,6 +1419,37 @@ inline bool botDriving() { return g_started; }
 // still not recorded even though every hook correctly passed it through.
 inline bool progressBlockActive() { return botDriving() && g_cfg.progressBlock; }
 
+// Returns a unique integer ID for any level. For online and main levels, this is m_levelID (> 0).
+// For local/editor levels created in the Create tab (m_levelID == 0), a unique ID is derived from
+// the level name and occurrence index so each local level has its own independent solution file.
+inline int levelKeyId(GJGameLevel* level) {
+    if (!level) return 0;
+    const int onlineId = level->m_levelID.value();
+    if (onlineId > 0) return onlineId;
+
+    std::string key = level->m_levelName;
+    if (auto* llm = LocalLevelManager::sharedState()) {
+        if (auto* arr = llm->m_localLevels) {
+            int countBefore = 0;
+            for (auto* obj : geode::cocos::CCArrayExt<GJGameLevel*>(arr)) {
+                if (obj == level) break;
+                if (obj && obj->m_levelName == level->m_levelName) {
+                    ++countBefore;
+                }
+            }
+            if (countBefore > 0) {
+                key += "#" + std::to_string(countBefore);
+            }
+        }
+    }
+    uint32_t h = 2166136261u;
+    for (char c : key) {
+        h ^= static_cast<uint8_t>(c);
+        h *= 16777619u;
+    }
+    return 1900000000 + static_cast<int>(h % 99999999u);
+}
+
 // Whether this build carries the test instruments below (CMake GDSOLVER_TEST_INSTRUMENTS, OFF unless a measurement asks): in any other build their
 // cfg keys are read and ignored, with a line in the log (testInstrument in session.hpp), so a release cannot be told to drop a player's requests.
 #ifdef GDSOLVER_TEST_INSTRUMENTS

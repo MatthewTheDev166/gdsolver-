@@ -53,9 +53,11 @@ enum Kind {
     KindRewind = 3,   // no improvement: rewound to the deepest plan, backed off further
     KindWedge  = 4,   // wedged / void: credited where it stopped moving, never ranks
     KindCount  = 5,
+    KindP2     = 0x100, // bit flag for Player 2 trajectory
 };
 
 inline const char* kindName(int k) {
+    k &= ~KindP2;
     switch (k) {
         case KindDeeper: return "deeper";
         case KindFollow: return "followed";
@@ -171,10 +173,8 @@ inline std::vector<double> g_panelMouseAuto;
 // visible while it grinds at them. A replay is the opposite -- you are there to watch the level,
 // and analysis drawn over it is in the way -- so there it stays off until F10 asks.
 //
-// solveSession(), not showingSolve(): the showing of the solution at the end is part of the same
-// session, and a map that switched itself off at that moment would vanish exactly when the run it
-// describes has finished. It ends with the session, so the next plain replay is off again.
-inline bool mapWanted() { return g_mapPref >= 0 ? g_mapPref != 0 : solveSession(); }
+// By default, visible during any automated session (solve or replay), unless overridden by F10.
+inline bool mapWanted() { return g_mapPref >= 0 ? g_mapPref != 0 : botDriving(); }
 
 // F1 and cfg `hud=0` reach both, like every other drawn thing except the bot badge (spec §9).
 //
@@ -519,6 +519,38 @@ inline void endPath() {
     ++g_generation;
 }
 
+// Dynamic live recording during plain replay when no offline itermap exists:
+inline void recordLiveStep(float x1, float y1, float x2, float y2, bool p2Active) {
+    std::lock_guard<std::mutex> lk(g_mu);
+    Path* p1 = nullptr;
+    Path* p2 = nullptr;
+    for (auto& p : g_paths) {
+        if ((p.kind & ~KindP2) == KindDeeper) {
+            if (p.kind & KindP2) p2 = &p;
+            else p1 = &p;
+        }
+    }
+    if (!p1) {
+        g_paths.push_back(Path{1, KindDeeper, {}});
+        p1 = &g_paths.back();
+    }
+    if (p1->xy.size() < kPathMaxPts * 2) {
+        p1->xy.push_back(x1);
+        p1->xy.push_back(y1);
+    }
+    if (p2Active) {
+        if (!p2) {
+            g_paths.push_back(Path{1, KindDeeper | KindP2, {}});
+            p2 = &g_paths.back();
+        }
+        if (p2->xy.size() < kPathMaxPts * 2) {
+            p2->xy.push_back(x2);
+            p2->xy.push_back(y2);
+        }
+    }
+    ++g_generation;
+}
+
 // ---- the file ----
 
 inline std::string pathFor(int levelId) {
@@ -768,8 +800,18 @@ constexpr int COVER_TAG = 0x51D65;   // the blackout drawn over the level while 
 
 // Colours, in one place so the legend and the marks cannot drift apart.
 inline cocos2d::ccColor4F kindColor(int k, float a) {
+    if (k & KindP2) {
+        const int base = k & ~KindP2;
+        switch (base) {
+            case KindDeeper: return {1.00f, 0.75f, 0.20f, a};   // warm amber/gold for P2 progress/clear
+            case KindFollow: return {0.95f, 0.60f, 0.20f, a};
+            case KindForced: return {0.85f, 0.50f, 0.30f, a};
+            case KindWedge:  return {0.90f, 0.40f, 0.50f, a};
+            default:         return {1.00f, 0.45f, 0.30f, a};
+        }
+    }
     switch (k) {
-        case KindDeeper: return {0.30f, 0.95f, 0.45f, a};   // progress
+        case KindDeeper: return {0.30f, 0.95f, 0.45f, a};   // progress (green)
         case KindFollow: return {0.35f, 0.80f, 1.00f, a};   // followed a solved branch
         case KindForced: return {0.70f, 0.55f, 1.00f, a};   // the forced portal route
         case KindWedge:  return {1.00f, 0.45f, 0.95f, a};   // wedged, never ranks
@@ -1000,9 +1042,12 @@ inline void drawWorld(cocos2d::CCNode* objectLayer) {
     //    visible as it ever was. The floor keeps a hundred-round map from vanishing.
     const float ta = std::max(0.05f, std::min(0.20f, 2.0f / std::max(1.f, (float)g_paths.size())));
     for (const Path& p : g_paths) {
-        const ccColor4F c = kindColor(p.kind, ta);
+        const bool isClearOrDeep = (p.kind & ~KindP2) == KindDeeper;
+        const float alpha = isClearOrDeep ? 0.75f : ta;
+        const float width = isClearOrDeep ? 1.4f : 0.8f;
+        const ccColor4F c = kindColor(p.kind, alpha);
         for (size_t i = 2; i + 1 < p.xy.size(); i += 2)
-            n->drawSegment({p.xy[i - 2], p.xy[i - 1]}, {p.xy[i], p.xy[i + 1]}, 0.8f, c);
+            n->drawSegment({p.xy[i - 2], p.xy[i - 1]}, {p.xy[i], p.xy[i + 1]}, width, c);
     }
     //    ...and a tick at each anchor, which is where its tail begins.
     for (const Death& d : g_deaths) {
@@ -1797,7 +1842,7 @@ public:
 inline void draw(cocos2d::CCNode* parent, PlayLayer* pl) {
     if (!parent) return;
     const float px = (pl && pl->m_player1) ? pl->m_player1->getPositionX() : 0.f;
-    if (mapWanted() && pl && pl->m_level) ensureLoaded(pl->m_level->m_levelID.value());
+    if (mapWanted() && pl && pl->m_level) ensureLoaded(levelKeyId(pl->m_level));
     if (mapWanted()) logScreenMetrics(parent);
     // The touch target is attached to whatever node the overlay is drawing into, and re-attached
     // if that node changes -- which it does when the results screen replaces the scene, and which

@@ -7356,6 +7356,24 @@ class $modify(GJBaseGameLayer) {
                 (uint8_t)((dual && m_player2 && m_player2->m_isOnGround) ? 1 : 0)
             };
         }
+        // Plain replay live trajectory recording: if itermap has no paths on disk, record live points
+        // so the player's trajectory (P1 and P2) is drawn dynamically and can be saved.
+        if (g_started && !g_sessionOver && !g_cfg.dpSolve && m_player1 && (g_tick % itermap::kPathStep == 0)) {
+            static bool s_liveRecording = false;
+            if (g_tick == 0) {
+                std::lock_guard<std::mutex> lk(itermap::g_mu);
+                s_liveRecording = itermap::g_paths.empty();
+            }
+            if (s_liveRecording) {
+                const bool twoPlayer = (m_levelSettings && m_levelSettings->m_twoPlayerMode)
+                                    || (m_level && m_level->m_twoPlayerMode);
+                const bool p2InPlay = (m_gameState.m_isDualMode || twoPlayer) && m_player2 && m_player2 != m_player1;
+                itermap::recordLiveStep(m_player1->getPositionX(), m_player1->getPositionY(),
+                                        p2InPlay ? m_player2->getPositionX() : 0.f,
+                                        p2InPlay ? m_player2->getPositionY() : 0.f,
+                                        p2InPlay);
+            }
+        }
         // 10-second heartbeat for plain replay. A plain replay writes nothing to
         // result.txt until it finishes, so this keeps the outer freeze detector
         // (no-update guard) from wrongly killing a healthy verification run

@@ -348,7 +348,10 @@ inline void record(GJBaseGameLayer* l, long long t) {
     r.onGround2 = p->m_isOnGround2 ? 1 : 0;
     r.flip = p->m_isUpsideDown ? 1 : 0;
     r.mini = (p->m_vehicleSize < 0.9f) ? 1 : 0;
-    r.dual = l->m_gameState.m_isDualMode ? 1 : 0;
+    const bool twoPlayer = (l->m_levelSettings && l->m_levelSettings->m_twoPlayerMode)
+                        || (l->m_level && l->m_level->m_twoPlayerMode);
+    const bool p2InPlay = (l->m_gameState.m_isDualMode || twoPlayer) && l->m_player2 && l->m_player2 != l->m_player1;
+    r.dual = p2InPlay ? 1 : 0;
     r.y2 = (r.dual && l->m_player2) ? l->m_player2->getPositionY() : 0.f;
     r.x2 = (r.dual && l->m_player2) ? l->m_player2->getPositionX() : 0.f;
     r.v2 = (r.dual && l->m_player2) ? (float)l->m_player2->m_yVelocity : 0.f;
@@ -8292,6 +8295,57 @@ inline void mapTail(const std::vector<AnchorRow>& rows, int iter, int kind, long
             break;
         }
     itermap::endPath();
+
+    // Player 2 trajectory: record contiguous dual/2-player segments with KindP2 flag
+    long long segStart = -1;
+    for (long long k = p0; k <= p1; ++k) {
+        const bool p2Active = rows[(size_t)k].valid && rows[(size_t)k].dual != 0;
+        if (p2Active && segStart < 0) {
+            segStart = k;
+        } else if (!p2Active && segStart >= 0) {
+            long long segEnd = k - 1;
+            if (segEnd > segStart) {
+                const long long p2Step = std::max<long long>(itermap::kPathStep, (segEnd - segStart + room - 1) / room);
+                itermap::beginPath(iter, kind | itermap::KindP2);
+                long long p2Last = -1;
+                for (long long j = segStart; j <= segEnd; j += p2Step) {
+                    if (rows[(size_t)j].valid) {
+                        itermap::addPathPoint(rows[(size_t)j].x2, rows[(size_t)j].y2);
+                        p2Last = j;
+                    }
+                }
+                for (long long j = segEnd; j > p2Last; --j) {
+                    if (rows[(size_t)j].valid) {
+                        itermap::addPathPoint(rows[(size_t)j].x2, rows[(size_t)j].y2);
+                        break;
+                    }
+                }
+                itermap::endPath();
+            }
+            segStart = -1;
+        }
+    }
+    if (segStart >= 0) {
+        long long segEnd = p1;
+        if (segEnd > segStart) {
+            const long long p2Step = std::max<long long>(itermap::kPathStep, (segEnd - segStart + room - 1) / room);
+            itermap::beginPath(iter, kind | itermap::KindP2);
+            long long p2Last = -1;
+            for (long long j = segStart; j <= segEnd; j += p2Step) {
+                if (rows[(size_t)j].valid) {
+                    itermap::addPathPoint(rows[(size_t)j].x2, rows[(size_t)j].y2);
+                    p2Last = j;
+                }
+            }
+            for (long long j = segEnd; j > p2Last; --j) {
+                if (rows[(size_t)j].valid) {
+                    itermap::addPathPoint(rows[(size_t)j].x2, rows[(size_t)j].y2);
+                    break;
+                }
+            }
+            itermap::endPath();
+        }
+    }
 }
 
 // The round that CLEARED. Every other round is put on the map by onDeath, and this one never
@@ -8307,7 +8361,8 @@ inline void mapTail(const std::vector<AnchorRow>& rows, int iter, int kind, long
 // A clear on the FIRST plan too, where this tail is the whole map: from tick 0 to the finish,
 // with no death or fixup beside it (itermap::emptyLocked counts it, so the map is saved).
 inline void mapClear(long long t, bool byFlight) {
-    mapTail(anchors::g_live, g_iter + 1, itermap::KindDeeper, byFlight ? g_ckT0 : g_anchorT, t);
+    (void)byFlight;
+    mapTail(anchors::g_live, g_iter + 1, itermap::KindDeeper, 0, t);
 }
 
 // cfg `coinmisspost` (config.hpp). Where a recorded attempt came closest to coin `ci`: the

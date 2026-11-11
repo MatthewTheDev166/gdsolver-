@@ -320,7 +320,7 @@ inline void pollProbeHotkeys() {
         int lv = g_cfg.levelId;
         if (lv <= 0)
             if (auto* pl = PlayLayer::get())
-                if (pl->m_level) lv = pl->m_level->m_levelID.value();
+                if (pl->m_level) lv = levelKeyId(pl->m_level);
         itermap::toggle(lv);
         log::info("hotkey: F10 -> iteration map {}", itermap::mapWanted() ? "on" : "off");
     }

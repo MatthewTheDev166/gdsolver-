@@ -19,6 +19,7 @@
 #include <Geode/modify/GameManager.hpp>
 #include <Geode/modify/GameStatsManager.hpp>
 #include <Geode/modify/GJGameLevel.hpp>
+#include <Geode/binding/LocalLevelManager.hpp>
 #include <Geode/modify/FMODAudioEngine.hpp>
 #include <Geode/modify/AppDelegate.hpp>
 #include "mod/gd_offsets.hpp"   // raw offsets into GD, per platform
