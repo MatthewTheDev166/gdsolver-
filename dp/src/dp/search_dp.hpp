@@ -1734,6 +1734,18 @@ inline int searchLayers(E& e, const Rules& rules, SearchResult& out) {
                             }
                         }
                     }
+                    if (s.dual != 0 && s.grounded2 && (s.mode2 == 0 || s.mode2 == 2 || s.mode2 == 5)) {
+                        const double sc2 = std::max(1.0, (double)((s.dx2 > 0.f) ? s.dx2 : 1.298f) / 1.298);
+                        const double half2 = playerHalf(s.mode2, s.mini2 != 0);
+                        const bool initiatedJump2 = (s.mode2 == 2)
+                                                        ? (input == 1 && s.action == 0)
+                                                        : (input == 1);
+                        if (initiatedJump2 && kid.s.usedOrb2 == nullptr) {
+                            const int jumpPen2 = groundJumpTimingPenalty(
+                                near, slps, pads, (double)s.xAbs + (double)s.dx2, (double)s.y2, half2, sc2, s.rev != 0, s.flip2 != 0);
+                            if (jumpPen2 > 0) addTight(jumpPen2);
+                        }
+                    }
 
                     // 7. Human Buffering & No Pointless Mid-Air Clicks (Cube, Ball, Robot, Spider):
                     //    - Humans buffer orb clicks (pressing 2..10 ticks before reaching an orb) and landing

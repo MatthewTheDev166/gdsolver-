@@ -567,21 +567,21 @@ inline int groundJumpTimingPenalty(const std::vector<const Obj*>& near,
         if (o->type != 0 || o->slope || o->oriented) continue;
         const double oSurfaceY = (!flip) ? (o->cy + o->hh) : (o->cy - o->hh);
         if (std::fabs(contactY - oSurfaceY) <= 2.5) {
-            if (px >= o->cx - o->hw - 2.0 && px <= o->cx + o->hw + 2.0) {
+            if (px >= o->cx - o->hw - half && px <= o->cx + o->hw + half) {
                 plat = o;
                 break;
             }
         }
     }
 
-    double distToDrop = 1e9;
+    double edgeDist = 1e9;
     if (plat != nullptr) {
         // Trace forward and backward edges across any adjacent matching solids
         double fwdEdge = (!rev) ? (plat->cx + plat->hw) : (plat->cx - plat->hw);
         double backEdge = (!rev) ? (plat->cx - plat->hw) : (plat->cx + plat->hw);
         int iters = 0;
         bool extended = true;
-        while (extended && ++iters < 8) {
+        while (extended && ++iters < 16) {
             extended = false;
             for (const Obj* o : near) {
                 if (o->type != 0 || o->slope || o->oriented) continue;
@@ -615,10 +615,7 @@ inline int groundJumpTimingPenalty(const std::vector<const Obj*>& near,
 
         const double totalPlatWidth = std::fabs(fwdEdge - backEdge);
         const double dFromEntry = (!rev) ? (px - backEdge) : (backEdge - px);
-        const double dropDx = (!rev) ? (fwdEdge - frontX) : (frontX - fwdEdge);
-        if (dropDx >= -2.0 && dropDx < maxLookahead) {
-            distToDrop = std::max(0.0, dropDx);
-        }
+        edgeDist = (!rev) ? (fwdEdge - px) : (px - fwdEdge);
 
         // 1. Entrance Edge Jump Penalty: penalize jumping on the very first few pixels of a wide platform
         // (unless there is an immediate hazard ahead that forces an early jump).
@@ -629,11 +626,9 @@ inline int groundJumpTimingPenalty(const std::vector<const Obj*>& near,
         }
     }
 
-    // 2. Obstacle / Drop-off Distance & Safe Human Centering Variation
-    if (distToPad < distToObs && distToPad < 100.0 * sc) {
-        // Jumping over a jump pad on the ground:
-        // Must initiate early enough (~30-38 px ahead) so the jump arc gains altitude before reaching the pad.
-        // A jump initiated < 22 px ahead risks the player's bottom intersecting the pad's trigger box on takeoff.
+    // 2. Obstacle / Drop-off / Jump Pad Distance & Safe Human Centering Variation
+    // A. Jump Pad on platform ahead (prioritize early vault over pad)
+    if (distToPad + half < edgeDist && distToPad < distToObs && distToPad < 100.0 * sc) {
         const uint32_t hash = ((uint32_t)std::floor(std::fabs(px) * 0.1) * 2654435761u);
         const double hashOffset = (double)(hash % 7) - 3.0; // [-3.0, +3.0] px
         const double padCenter = (34.0 + hashOffset) * sc;
@@ -647,24 +642,62 @@ inline int groundJumpTimingPenalty(const std::vector<const Obj*>& near,
         }
         const double diff = std::fabs(distToPad - padCenter);
         pen += (int)std::lround(diff * diff * 0.03);
-    } else {
-        const double effectiveDistAhead = std::min(distToObs, distToDrop);
-        if (effectiveDistAhead < 100.0 * sc) {
-            // Deterministic pseudo-random variation centered around 28 px (+-4 px)
-            const uint32_t hash = ((uint32_t)std::floor(std::fabs(px) * 0.1) * 2654435761u);
-            const double hashOffset = (double)(hash % 9) - 4.0; // [-4.0, +4.0] px
-            const double humanCenter = (28.0 + hashOffset) * sc;
+    }
+    // B. Obstacle on platform ahead (spike/wall sitting on this platform before the drop-off)
+    else if (distToObs + half < edgeDist && distToObs < 100.0 * sc) {
+        const uint32_t hash = ((uint32_t)std::floor(std::fabs(px) * 0.1) * 2654435761u);
+        const double hashOffset = (double)(hash % 9) - 4.0; // [-4.0, +4.0] px
+        const double humanCenter = (28.0 + hashOffset) * sc;
 
-            if (effectiveDistAhead > 42.0 * sc) {
-                const double excess = effectiveDistAhead - 42.0 * sc;
-                pen += (int)std::lround(excess * 1.8);
-            } else if (effectiveDistAhead < 8.0 * sc) {
-                const double deficit = 8.0 * sc - effectiveDistAhead;
-                pen += (int)std::lround(deficit * 1.6);
-            }
-            const double diff = std::fabs(effectiveDistAhead - humanCenter);
-            pen += (int)std::lround(diff * diff * 0.025);
+        if (distToObs > 42.0 * sc) {
+            const double excess = distToObs - 42.0 * sc;
+            pen += (int)std::lround(excess * 1.8);
+        } else if (distToObs < 8.0 * sc) {
+            const double deficit = 8.0 * sc - distToObs;
+            pen += (int)std::lround(deficit * 1.6);
         }
+        const double diff = std::fabs(distToObs - humanCenter);
+        pen += (int)std::lround(diff * diff * 0.025);
+    }
+    // C. Drop-off / Gap at the edge of the platform (no obstacle on platform)
+    else if (plat != nullptr && edgeDist < 60.0 * sc) {
+        const uint32_t hash = ((uint32_t)std::floor(std::fabs(px) * 0.1) * 2654435761u);
+        const double hashOffset = (double)(hash % 7) - 3.0; // [-3.0, +3.0] px
+        // Natural human gap takeoff: center is ~14-20 px before the platform edge
+        const double gapCenter = (17.0 + hashOffset) * sc;
+
+        if (edgeDist < 10.0 * sc) {
+            // Late jump deficit penalty: player waited too long and is approaching/hanging off edge
+            const double deficit = 10.0 * sc - edgeDist;
+            pen += (int)std::lround(deficit * 3.0) + 14;
+            if (edgeDist < 2.0 * sc) {
+                // Severe penalty for last-pixel / mid-air hanging jumps: ensures penalty never drops to 0!
+                const double panic = 2.0 * sc - edgeDist;
+                pen += (int)std::lround(panic * 4.0) + 20;
+            }
+        } else if (edgeDist > 34.0 * sc) {
+            // Jumping too early before a gap wastes jump reach and risks falling into the pit
+            const double excess = edgeDist - 34.0 * sc;
+            pen += (int)std::lround(excess * 1.5);
+        }
+        const double diff = std::fabs(edgeDist - gapCenter);
+        pen += (int)std::lround(diff * diff * 0.03);
+    }
+    // D. Obstacle on world floor (plat == nullptr)
+    else if (distToObs < 100.0 * sc) {
+        const uint32_t hash = ((uint32_t)std::floor(std::fabs(px) * 0.1) * 2654435761u);
+        const double hashOffset = (double)(hash % 9) - 4.0; // [-4.0, +4.0] px
+        const double humanCenter = (28.0 + hashOffset) * sc;
+
+        if (distToObs > 42.0 * sc) {
+            const double excess = distToObs - 42.0 * sc;
+            pen += (int)std::lround(excess * 1.8);
+        } else if (distToObs < 8.0 * sc) {
+            const double deficit = 8.0 * sc - distToObs;
+            pen += (int)std::lround(deficit * 1.6);
+        }
+        const double diff = std::fabs(distToObs - humanCenter);
+        pen += (int)std::lround(diff * diff * 0.025);
     }
 
     return pen;
